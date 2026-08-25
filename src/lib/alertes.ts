@@ -69,7 +69,7 @@ export function calculerAlertes(base: BaseGMAO): AlerteCalculee[] {
       pousser({
         id: `alr_regl_${ctrl.id}_${eq.id}`,
         source: 'echeance_reglementaire',
-        niveau: j < 0 ? (ctrl.bloquant ? 'critique' : 'alerte') : 'info',
+        niveau: j < 0 ? (ctrl.bloquant && eq.criticite <= 2 ? 'critique' : 'alerte') : 'info',
         titre: j < 0 ? 'Contrôle réglementaire échu' : 'Contrôle réglementaire à programmer',
         message: `${ctrl.libelle} — ${eq.code} ${eq.designation}${
           j < 0 ? ` (${-j} j de retard${ctrl.bloquant ? ', exploitation à suspendre' : ''})` : ` (dans ${j} j)`

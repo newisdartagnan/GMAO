@@ -242,7 +242,10 @@ export function conformite(base: BaseGMAO): IndicateursConformite {
   }
 
   const total = aJour + imminentes + depassees;
-  const reserves = base.visitesControle.flatMap((v) => v.reserves).filter((r) => !r.levee);
+  const reserves = [
+    ...base.visitesControle.flatMap((v) => v.reserves),
+    ...base.ordresTravail.flatMap((o) => o.reserves),
+  ].filter((r) => !r.levee);
 
   return {
     aJour,
@@ -283,6 +286,11 @@ export interface EcheancePreventive {
 /** Toutes les occurrences préventives à venir ou en retard, dans l'horizon donné. */
 export function echeancierPreventif(base: BaseGMAO, horizonJours = 90): EcheancePreventive[] {
   const out: EcheancePreventive[] = [];
+  // Couples déjà couverts par un OT ouvert, indexés une fois pour toutes.
+  const couverts = new Map<string, ID>();
+  for (const o of base.ordresTravail) {
+    if (o.gammeId && o.equipementId && estOuvert(o)) couverts.set(`${o.gammeId}|${o.equipementId}`, o.id);
+  }
   for (const g of base.gammes.filter((x) => x.actif)) {
     const cibles = equipementsDeLaGamme(base, g.id);
     for (const eq of cibles) {
@@ -290,16 +298,13 @@ export function echeancierPreventif(base: BaseGMAO, horizonJours = 90): Echeance
       if (!date) continue;
       const j = joursRestants(date);
       if (j === null || j > horizonJours) continue;
-      const otExistant = base.ordresTravail.find(
-        (o) => o.gammeId === g.id && o.equipementId === eq.id && estOuvert(o),
-      );
       out.push({
         gammeId: g.id,
         equipementId: eq.id,
         date,
         joursRestants: j,
         dureeMin: g.dureeEstimeeMin,
-        otId: otExistant?.id,
+        otId: couverts.get(`${g.id}|${eq.id}`),
       });
     }
   }
