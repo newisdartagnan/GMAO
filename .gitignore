@@ -9,3 +9,6 @@ dist-ssr
 *.log
 .vite
 coverage
+
+sauvegardes/*
+!sauvegardes/.gitkeep

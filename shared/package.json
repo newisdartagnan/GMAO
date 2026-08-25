@@ -1,0 +1,21 @@
+{
+  "name": "@gmao/partage",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Modèle de domaine, règles de calcul et opérations métier partagés entre l'API et l'interface web",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

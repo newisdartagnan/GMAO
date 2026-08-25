@@ -1,38 +1,21 @@
 {
   "name": "gmao-hopital",
-  "private": true,
   "version": "1.0.0",
+  "private": true,
   "type": "module",
-  "description": "GMAO hospitaliere — gestion de maintenance assistee par ordinateur pour etablissement de sante de reference",
+  "description": "GMAO hospitalière — interface web React, API Fastify et base PostgreSQL",
+  "workspaces": ["shared", "api", "web"],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "lint": "eslint .",
-    "typecheck": "tsc -b --noEmit"
+    "dev": "npm run dev --workspace=api & npm run dev --workspace=web",
+    "dev:api": "npm run dev --workspace=api",
+    "dev:web": "npm run dev --workspace=web",
+    "build": "npm run build --workspace=api && npm run build --workspace=web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspace=web",
+    "migrer": "npm run migrer --workspace=api",
+    "seed": "npm run seed --workspace=api"
   },
-  "dependencies": {
-    "date-fns": "^4.1.0",
-    "lucide-react": "^0.469.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^7.1.1",
-    "recharts": "^2.15.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@tailwindcss/vite": "^4.0.0",
-    "@types/node": "^26.3.0",
-    "@types/react": "^19.0.2",
-    "@types/react-dom": "^19.0.2",
-    "@vitejs/plugin-react": "^4.3.4",
-    "eslint": "^9.17.0",
-    "eslint-plugin-react-hooks": "^5.1.0",
-    "eslint-plugin-react-refresh": "^0.4.16",
-    "globals": "^15.14.0",
-    "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.2",
-    "vite": "^6.0.7"
+  "engines": {
+    "node": ">=22"
   }
 }
