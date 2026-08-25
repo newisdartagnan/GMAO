@@ -285,7 +285,6 @@ const DEF_CONTROLES: {
   { code: 'CR-EXTINC', libelle: 'Vérification des extincteurs', referentiel: 'securite_incendie', texte: 'Règle APSAD R4 — vérification annuelle, épreuve décennale', familles: ['SSI'], periode: [1, 'annees'], execution: 'organisme_agree', bloquant: false, organisme: 'F022' },
   { code: 'CR-METRO', libelle: 'Étalonnage raccordé des instruments de mesure', referentiel: 'metrologie', texte: 'ISO 17025 — raccordement aux étalons nationaux', familles: ['LAB', 'FRO'], periode: [1, 'annees'], execution: 'organisme_agree', bloquant: false, organisme: 'F018' },
   { code: 'CR-GE', libelle: 'Essai en charge du groupe électrogène', referentiel: 'securite_incendie', texte: 'Essai mensuel à vide, essai semestriel en charge', familles: ['ELE'], periode: [6, 'mois'], execution: 'interne', bloquant: true },
-  { code: 'CR-BIOMED-INV', libelle: 'Inventaire physique et contrôle de traçabilité du parc',referentiel: 'HAS_certification', texte: 'Critère de certification — inventaire annuel des DM', familles: ['REA', 'MON', 'BLO', 'IMG', 'LAB', 'DIA', 'NEO', 'STE', 'EXP', 'FRO', 'MOB'], periode: [1, 'annees'], execution: 'interne', bloquant: false },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -899,13 +898,13 @@ export function construireBaseDemo(): BaseGMAO {
       ],
     },
     {
-      libelle: 'Vérification mensuelle des extincteurs et du désenfumage',
-      designations: ['Extincteur portatif', 'Système de sécurité incendie (SSI cat. A)'],
+      libelle: 'Ronde mensuelle de sécurité incendie',
+      designations: ['Système de sécurité incendie (SSI cat. A)'],
       type: 'preventif', periode: [1, 'mois'], duree: 25, execution: 'interne', arret: false,
       ops: [
-        ['Contrôle de la présence et de l’accessibilité', 'controle_visuel', 5],
-        ['Contrôle de la pression et du plombage', 'controle_visuel', 10],
-        ['Test des détecteurs par zone', 'test_fonctionnel', 10],
+        ['Contrôle du tableau de signalisation et des voyants de dérangement', 'controle_visuel', 5],
+        ['Test des détecteurs par zone, en rotation', 'test_fonctionnel', 10],
+        ['Essai du désenfumage et des portes coupe-feu', 'test_fonctionnel', 10],
       ],
     },
     {
@@ -999,12 +998,12 @@ export function construireBaseDemo(): BaseGMAO {
     const cibles = equipements.filter(
       (e) => e.statut !== 'reforme' && ctrl.familleIds.includes(e.familleId),
     );
-    // On ne trace pas chaque extincteur individuellement : échantillon représentatif.
-    for (const eq of echantillon(cibles, Math.min(cibles.length, 25))) {
-      if (chance(0.12)) continue; // équipement jamais contrôlé : c'est un écart réel
+    // Tout le périmètre est tracé : c'est précisément ce qu'un auditeur vérifie.
+    for (const eq of cibles) {
+      if (chance(0.035)) continue; // équipement jamais contrôlé : c'est un écart réel
       const jours = joursPeriode(ctrl.periodiciteValeur, ctrl.periodiciteUnite);
-      const derniere = addDays(AUJ, -ent(Math.round(jours * 0.1), Math.round(jours * 1.15)));
-      const verdict = chance(0.78) ? 'conforme' : chance(0.7) ? 'conforme_avec_reserves' : 'non_conforme';
+      const derniere = addDays(AUJ, -ent(Math.round(jours * 0.05), Math.round(jours * 1.04)));
+      const verdict = chance(0.88) ? 'conforme' : chance(0.72) ? 'conforme_avec_reserves' : 'non_conforme';
       visitesControle.push({
         id: `vct_${String(vcSeq).padStart(4, '0')}`,
         controleId: ctrl.id,
@@ -1027,9 +1026,9 @@ export function construireBaseDemo(): BaseGMAO {
                   'Registre de sécurité non tenu à jour',
                   'Dispositif de sécurité neutralisé lors du contrôle',
                 ]),
-                gravite: verdict === 'non_conforme' ? (chance(0.4) ? 'critique' : 'majeure') : 'mineure',
+                gravite: verdict === 'non_conforme' ? (chance(0.35) ? 'critique' : 'majeure') : 'mineure',
                 dateEcheance: iso(addDays(derniere, ent(30, 180))),
-                levee: chance(0.45),
+                levee: chance(0.72),
                 dateLevee: undefined,
               }],
         numeroRapport: `${ctrl.code}/${derniere.getFullYear()}/${String(vcSeq).padStart(4, '0')}`,
@@ -1053,8 +1052,7 @@ export function construireBaseDemo(): BaseGMAO {
   for (let m = MOIS_HISTORIQUE; m >= 0; m -= 1) {
     const nbCorrectifs = ent(24, 40);
     for (let k = 0; k < nbCorrectifs; k += 1) {
-      const jourBase = -m * 30 + ent(0, 29);
-      if (jourBase > 0) continue;
+      const jourBase = -(m * 30) - ent(0, 29);
       const eq = choix(equipementsActifs);
       const { ot, di } = genererCorrectif(eq, jourBase);
       if (di) demandes.push(di);
@@ -1066,13 +1064,12 @@ export function construireBaseDemo(): BaseGMAO {
   for (const g of gammes) {
     const cibles = equipements.filter((e) => g.equipementIds.includes(e.id));
     const jours = joursPeriode(g.periodiciteValeur, g.periodiciteUnite);
-    const nbOccurrences = Math.min(4, Math.floor((MOIS_HISTORIQUE * 30) / jours));
-    for (const eq of echantillon(cibles, Math.min(cibles.length, g.periodiciteUnite === 'mois' && g.periodiciteValeur === 1 ? 6 : 14))) {
-      for (let o = nbOccurrences; o >= 1; o -= 1) {
-        if (chance(0.15)) continue; // occurrence non réalisée : retard assumé dans l'historique
-        const jour = -(o * jours) + ent(-4, 6);
-        if (jour > -2) continue;
-        ordresTravail.push(genererPreventif(g, eq, jour));
+    const nbOccurrences = Math.min(20, Math.floor((MOIS_HISTORIQUE * 30) / jours));
+    for (const eq of cibles) {
+      const phase = ent(1, jours);
+      for (let o = nbOccurrences - 1; o >= 0; o -= 1) {
+        if (chance(0.04)) continue; // occurrence non réalisée : retard assumé dans l'historique
+        ordresTravail.push(genererPreventif(g, eq, -(o * jours) - phase));
       }
     }
   }
@@ -1610,7 +1607,7 @@ export function construireBaseDemo(): BaseGMAO {
       if (op.valeurAttendue === undefined) return { operationId: op.id, conforme: chance(0.96) };
       const min = op.toleranceMin ?? op.valeurAttendue * 0.9;
       const max = op.toleranceMax ?? op.valeurAttendue * 1.1;
-      const dansTolerance = chance(0.93);
+      const dansTolerance = chance(0.98);
       const valeur = dansTolerance
         ? Number(dec(min, max, 2))
         : Number(dec(max, max * 1.25 + 0.01, 2));
@@ -1658,7 +1655,7 @@ export function construireBaseDemo(): BaseGMAO {
             libelle: `${nonConformes} mesure(s) hors tolérance — contre-visite à programmer`,
             gravite: nonConformes > 1 ? 'majeure' : 'mineure',
             dateEcheance: iso(addDays(fin, 30)),
-            levee: chance(0.5),
+            levee: chance(0.85),
           }]
         : [],
       securite: {
@@ -1751,10 +1748,10 @@ function locauxPour(locaux: Local[], services: ServiceHospitalier[], modele: Mod
 function tirerStatut(criticite: number): Equipement['statut'] {
   const r = alea();
   if (criticite === 1) {
-    if (r < 0.9) return 'en_service';
-    if (r < 0.94) return 'en_maintenance';
-    if (r < 0.97) return 'en_panne';
-    if (r < 0.99) return 'attente_pieces';
+    if (r < 0.94) return 'en_service';
+    if (r < 0.965) return 'en_maintenance';
+    if (r < 0.982) return 'en_panne';
+    if (r < 0.992) return 'attente_pieces';
     return 'reforme';
   }
   if (r < 0.84) return 'en_service';

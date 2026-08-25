@@ -1,5 +1,47 @@
-import type { BaseGMAO, ID, ISODate } from '@/types/domain';
+import type { BaseGMAO, ID, ISODate, OrdreTravail, VisiteControle } from '@/types/domain';
 import { ajouterPeriode, aujourdHui, iso, toDate } from './dates';
+
+/**
+ * Les échéanciers parcourent des centaines de couples (gamme × équipement) et
+ * sont recalculés à chaque écriture. Sans index, chaque couple relirait la
+ * liste complète des ordres de travail. Les deux index ci-dessous sont
+ * construits une fois par version de la base et retenus dans une WeakMap :
+ * une nouvelle base — donc un nouvel objet — invalide naturellement le cache.
+ */
+const cacheRealisations = new WeakMap<BaseGMAO, Map<string, ISODate>>();
+const cacheVisites = new WeakMap<BaseGMAO, Map<string, VisiteControle>>();
+
+const estTerminee = (o: OrdreTravail) => o.statut === 'realise' || o.statut === 'cloture';
+
+function indexRealisations(base: BaseGMAO): Map<string, ISODate> {
+  const existant = cacheRealisations.get(base);
+  if (existant) return existant;
+  const m = new Map<string, ISODate>();
+  for (const o of base.ordresTravail) {
+    if (!o.gammeId || !o.equipementId || !estTerminee(o)) continue;
+    const date = o.dateFin ?? o.dateCloture;
+    if (!date) continue;
+    const cle = `${o.gammeId}|${o.equipementId}`;
+    const precedente = m.get(cle);
+    if (!precedente || date > precedente) m.set(cle, date);
+  }
+  cacheRealisations.set(base, m);
+  return m;
+}
+
+/** Dernière visite enregistrée par couple (contrôle × équipement). */
+function indexVisites(base: BaseGMAO): Map<string, VisiteControle> {
+  const existant = cacheVisites.get(base);
+  if (existant) return existant;
+  const m = new Map<string, VisiteControle>();
+  for (const v of base.visitesControle) {
+    const cle = `${v.controleId}|${v.equipementId ?? ''}`;
+    const precedente = m.get(cle);
+    if (!precedente || v.dateVisite > precedente.dateVisite) m.set(cle, v);
+  }
+  cacheVisites.set(base, m);
+  return m;
+}
 
 /**
  * Calcul des prochaines échéances de maintenance préventive et de contrôle
@@ -10,17 +52,7 @@ import { ajouterPeriode, aujourdHui, iso, toDate } from './dates';
 
 /** Date de la dernière intervention terminée pour une gamme sur un équipement. */
 export function derniereRealisationGamme(base: BaseGMAO, gammeId: ID, equipementId: ID): ISODate | null {
-  const faits = base.ordresTravail
-    .filter(
-      (o) =>
-        o.gammeId === gammeId &&
-        o.equipementId === equipementId &&
-        (o.statut === 'realise' || o.statut === 'cloture'),
-    )
-    .map((o) => o.dateFin ?? o.dateCloture)
-    .filter((d): d is ISODate => Boolean(d))
-    .sort();
-  return faits.length ? faits[faits.length - 1] : null;
+  return indexRealisations(base).get(`${gammeId}|${equipementId}`) ?? null;
 }
 
 export function prochaineEcheanceGamme(base: BaseGMAO, gammeId: ID, equipementId: ID): ISODate | null {
@@ -91,10 +123,7 @@ export function seuilCompteurSuivant(base: BaseGMAO, gammeId: ID, equipementId: 
 }
 
 export function derniereVisiteControle(base: BaseGMAO, controleId: ID, equipementId?: ID) {
-  return base.visitesControle
-    .filter((v) => v.controleId === controleId && (!equipementId || v.equipementId === equipementId))
-    .sort((a, b) => a.dateVisite.localeCompare(b.dateVisite))
-    .at(-1);
+  return indexVisites(base).get(`${controleId}|${equipementId ?? ''}`);
 }
 
 export function prochaineEcheanceControle(base: BaseGMAO, controleId: ID, equipementId?: ID): ISODate | null {
