@@ -34,9 +34,10 @@ openssl rand -base64 32   # pour DB_PASSWORD
 openssl rand -base64 32   # pour JWT_SECRET
 ```
 
-Puis :
+Vérifier que les quatre ports de la pile sont libres, puis démarrer :
 
 ```bash
+./scripts/verifier-ports.sh
 docker compose up -d
 ```
 
@@ -48,6 +49,38 @@ jeu de données de démonstration décrivant un hôpital complet — 30 services
 près de mille équipements, vingt mois d'historique d'interventions. Pour partir
 d'une base vierge, mettre `SEED_AU_DEMARRAGE=false` avant le premier
 lancement : il ne restera qu'à créer les comptes d'accès.
+
+### Si un port est déjà pris
+
+La pile publie quatre ports sur le serveur. Si l'un d'eux est occupé, Docker
+refuse de démarrer le conteneur concerné :
+
+```
+Bind for 0.0.0.0:5434 failed: port is already allocated
+```
+
+Le port en cause est celui du message. Il suffit de changer la variable
+correspondante dans `.env` et de relancer `docker compose up -d` — ces ports ne
+servent qu'à joindre la pile depuis le poste, les conteneurs communiquent entre
+eux par leur réseau interne.
+
+| Variable | Défaut | À quoi il sert | Conflits fréquents |
+|---|---|---|---|
+| `WEB_PORT` | 8080 | Interface web — l'adresse que les agents ouvrent | Très fréquent : autre application web |
+| `DB_PORT_HOTE` | 5434 | PostgreSQL pour pgAdmin, DBeaver, `psql` | 5432 : PostgreSQL local · 5433 : autre pile de conteneurs |
+| `API_PORT_HOTE` | 3001 | Interroger l'API directement | Serveurs de développement Node |
+| `ADMINER_PORT` | 8081 | Adminer, profil `admin` seulement | Autre outil d'administration |
+
+Pour savoir ce qui occupe un port :
+
+```bash
+docker ps --format '{{.Names}}\t{{.Ports}}'   # un autre conteneur ?
+sudo ss -tlnp | grep 5434                      # ou un service de la machine
+```
+
+Ni l'API ni Adminer n'ont besoin de `DB_PORT_HOTE` : ils joignent PostgreSQL
+par le réseau des conteneurs. Ce port n'existe que pour brancher un outil
+d'administration depuis le poste.
 
 ### Première connexion
 
@@ -89,7 +122,7 @@ utilisateur et base définis dans `.env`). L'accès est limité à la boucle
 locale du serveur : depuis un autre poste, passer par un tunnel SSH.
 
 La base est aussi joignable par pgAdmin, DBeaver ou `psql` sur le port
-`DB_PORT_HOTE` (5433 par défaut), lui aussi restreint à la boucle locale.
+`DB_PORT_HOTE` (5434 par défaut), lui aussi restreint à la boucle locale.
 
 ### Vues prêtes à l'emploi
 
