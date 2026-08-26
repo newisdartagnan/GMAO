@@ -24,7 +24,7 @@ import { uid } from '@gmao/partage';
 import { iso, aujourdHui } from '@gmao/partage';
 
 export function PageEquipements() {
-  const { base, index, commander } = useGMAO();
+  const { base, index, commander, configuration } = useGMAO();
   const [params, setParams] = useSearchParams();
   const naviguer = useNavigate();
   const [recherche, setRecherche] = useState('');
@@ -41,12 +41,12 @@ export function PageEquipements() {
 
   const filtres = useMemo(() => {
     const q = normaliser(recherche);
-    const statut = lire('statut');
-    const criticite = lire('criticite');
-    const domaine = lire('domaine');
-    const serviceId = lire('service');
-    const familleId = lire('famille');
-    const etat = lire('etat');
+    const statut = params.get('statut') ?? '';
+    const criticite = params.get('criticite') ?? '';
+    const domaine = params.get('domaine') ?? '';
+    const serviceId = params.get('service') ?? '';
+    const familleId = params.get('famille') ?? '';
+    const etat = params.get('etat') ?? '';
 
     return base.equipements.filter((e) => {
       if (statut && e.statut !== statut) return false;
@@ -309,6 +309,7 @@ export function PageEquipements() {
                 designation={e.designation}
                 service={index.services.get(e.serviceId)?.nom ?? ''}
                 criticite={CRITICITE[e.criticite].libelle.toUpperCase()}
+                formulaire={configuration.formulaireExterne}
               />
             ))}
           </div>

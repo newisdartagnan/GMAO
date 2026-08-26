@@ -117,12 +117,28 @@ créneaux s'ouvrent à la demande depuis l'écran des rondes.
 docker compose --profile admin up -d
 ```
 
-Adminer est alors accessible sur **http://localhost:8081** (serveur `db`,
-utilisateur et base définis dans `.env`). L'accès est limité à la boucle
-locale du serveur : depuis un autre poste, passer par un tunnel SSH.
+Deux outils démarrent :
 
-La base est aussi joignable par pgAdmin, DBeaver ou `psql` sur le port
-`DB_PORT_HOTE` (5434 par défaut), lui aussi restreint à la boucle locale.
+| Outil | Adresse | Pour quoi faire |
+|---|---|---|
+| **pgAdmin 4** | http://localhost:8082 | Reprendre les données à la main : corriger, supprimer, importer |
+| **Adminer** | http://localhost:8081 | Une requête ponctuelle, sans attendre le chargement de pgAdmin |
+
+Les deux sont limités à la boucle locale du serveur : depuis un autre poste,
+passer par un tunnel SSH. La base est aussi joignable par un pgAdmin installé
+sur le poste, par DBeaver ou par `psql`, sur le port `DB_PORT_HOTE` (5434 par
+défaut).
+
+### pgAdmin 4
+
+Le compte d'accès est celui de `PGADMIN_EMAIL` / `PGADMIN_PASSWORD`. La
+connexion au serveur est déjà déclarée sous le nom « GMAO — base de
+l'hôpital » : seul le mot de passe de la base (`DB_PASSWORD`) est demandé à la
+première ouverture.
+
+Le dossier `sauvegardes/` du dépôt est monté dans pgAdmin sous
+`echanges` : les fichiers CSV à importer s'y déposent, et les exports y
+atterrissent.
 
 ### Vues prêtes à l'emploi
 
@@ -152,11 +168,271 @@ SELECT date, shift, valeur_num, conforme
  ORDER BY date;
 ```
 
-### Après une modification directe en SQL
+`v_demandes_externes` s'ajoute à cette liste quand un formulaire de
+signalement est branché (voir plus bas).
 
-L'API garde une copie de l'état en mémoire. Après une écriture faite hors de
-l'application, lui demander de relire les tables : **Paramètres → Base de
-données → Recharger depuis la base**, ou `POST /api/admin/recharger`.
+---
+
+## Reprendre la base à la main
+
+Oui, la base est entièrement modifiable depuis pgAdmin : c'est un PostgreSQL
+ordinaire, sans surcouche propriétaire. Le schéma est en français, les tables
+portent le nom des objets métier, et rien n'est chiffré. Trois précautions,
+et une seule est propre à cette application.
+
+**1. L'API garde l'état en mémoire.** Elle sert ses réponses depuis une copie
+de la base, pour appliquer les mêmes règles de calcul que l'interface. Après
+une écriture faite en SQL, il faut la lui faire relire, sinon elle continue
+d'afficher l'ancien état — et la prochaine écriture depuis l'interface
+réécrira par-dessus votre correction :
+
+> **Paramètres → Base de données → Recharger depuis la base**
+
+Pour une opération de masse, plus simple : `docker compose stop api`, on
+travaille, puis `docker compose start api`.
+
+**2. Certaines références vivent dans du JSONB** — les équipements couverts par
+un contrat, les points d'une gamme, les lignes d'un bon de commande. Elles
+échappent aux clés étrangères : supprimer un équipement laisse son
+identifiant dans les contrats qui le citaient, sans que PostgreSQL ne dise
+rien.
+
+**3. Les dates sont du texte au format `AAAA-MM-JJ`**, jamais `JJ/MM/AAAA`.
+C'est ce que lit le code métier.
+
+Ces trois points se vérifient d'une requête, à lancer après toute reprise :
+
+```sql
+SELECT * FROM v_coherence ORDER BY gravite, controle;
+```
+
+La vue signale les références mortes, les dates inexploitables, les comptes
+actifs sans mot de passe, une base sans administrateur, les seuils de stock
+incohérents, les contrats qui finissent avant de commencer, les équipements
+critiques sans gamme préventive. Ce qui est marqué `bloquant` empêche
+l'application de fonctionner correctement ; `attention` et `information`
+décrivent l'état du paramétrage.
+
+### Vider le jeu de démonstration
+
+```bash
+./scripts/sauvegarder.sh          # d'abord. Une purge ne se rattrape pas.
+docker compose stop api
+```
+
+Ouvrir `scripts/purger-donnees.sql` dans pgAdmin. Deux niveaux au choix,
+tous deux commentés :
+
+- **niveau 1** — efface l'activité (interventions, rondes, stocks, historique)
+  et garde le référentiel : sites, services, locaux, familles, équipements,
+  comptes. C'est ce qu'on veut après une période d'essai ;
+- **niveau 2** — ne laisse que le schéma.
+
+Le script s'exécute dans une transaction qui finit par `ROLLBACK` : la
+première exécution ne change rien et affiche le compte exact de chaque table.
+Quand le résultat convient, remplacer `ROLLBACK` par `COMMIT` et réexécuter.
+
+Le jeu de démonstration ne revient pas de lui-même : la table `installation`
+garde la trace du peuplement initial, et l'API ne peuple que sur une base qui
+n'a jamais rien reçu.
+
+### Repartir sur une base vierge
+
+Après une purge de niveau 2, il faut au minimum un site, un bâtiment, un
+local, un service et un compte administrateur pour que l'application
+s'ouvre. `scripts/creer-administrateur.sql` les crée ; il reste à y coller le
+mot de passe haché :
+
+```bash
+docker compose exec api node -e \
+  "console.log(require('bcryptjs').hashSync('MotDePasseChoisi', 10))"
+```
+
+### Charger l'inventaire réel
+
+`scripts/importer-equipements.sql` charge un CSV d'équipements. Le fichier
+désigne les rattachements par leurs codes métier — code famille, code local,
+code service — et non par des identifiants internes : c'est le script qui fait
+la correspondance. Modèle de fichier : `scripts/modele-equipements.csv`.
+
+Le script commence par un rapport de contrôle — lignes lues, codes en double,
+familles inconnues, dates mal formées, criticités hors bornes — avant
+d'écrire quoi que ce soit, et lui aussi finit par `ROLLBACK` tant qu'on ne
+l'a pas remplacé par `COMMIT` :
+
+```
+ controle                         | valeur
+----------------------------------+--------
+ lignes lues                      | 6
+ codes déjà présents dans la base | 1
+ famille inconnue : ZZZ           | 1
+ date non exploitable             | 1
+ criticité hors 1-4               | 1
+```
+
+Les lignes signalées sont laissées de côté ; les autres passent. On corrige
+le CSV et on recommence.
+
+---
+
+## Recevoir les demandes par formulaire
+
+Un aide-soignant qui constate une panne à 3 h du matin n'ouvrira pas la GMAO :
+il n'a pas de compte, et il a autre chose à faire. Il a un téléphone.
+L'étiquette collée sur l'équipement porte un QR code ; il le scanne, un
+formulaire s'ouvre avec le numéro d'inventaire déjà rempli, il décrit le
+problème. La demande arrive dans la file du biomédical, rattachée au bon
+équipement, avec sa priorité et son impact patient déjà interprétés.
+
+```
+   étiquette QR   →   formulaire JotForm   →   GMAO
+   sur l'appareil     sur le téléphone         demande d'intervention
+```
+
+### 1. Créer le formulaire
+
+Sur JotForm, un formulaire avec ces questions. Ce qui compte est le **nom**
+de chaque question (Propriétés du champ → Field Details → Nom unique), pas son
+libellé affiché :
+
+| Nom du champ | Type | Contenu |
+|---|---|---|
+| `equipement` | Texte court | Numéro d'inventaire — pré-rempli par le QR code |
+| `objet` | Texte court | Le problème en une ligne |
+| `description` | Texte long | Ce qui a été constaté |
+| `urgence` | Liste | Urgence vitale / Urgent / Normal / Quand possible |
+| `impact` | Liste | Risque vital / Report de soin / Gêne / Aucun |
+| `service` | Liste | Service demandeur |
+| `declarant` | Nom | Qui signale |
+| `local` | Texte court | Salle, box, chambre |
+
+Seuls `equipement` et l'un de `objet` / `description` sont indispensables. Les
+autres affinent la qualification ; leur absence ne fait rien perdre.
+
+Un formulaire déjà en service et nommé autrement se raccorde par
+`JOTFORM_CHAMPS`, sans le refaire :
+
+```
+JOTFORM_CHAMPS={"equipement":"tag_machine","objet":"panne_signalee"}
+```
+
+L'onglet **Paramètres → Formulaire externe** affiche les noms que le serveur
+accepte pour chaque champ.
+
+### 2. Brancher la GMAO
+
+Dans `.env` :
+
+```ini
+JOTFORM_API_KEY=votre-cle-api            # Compte JotForm → Paramètres → API
+JOTFORM_FORMULAIRE_ID=250000000000000    # les chiffres à la fin de l'URL
+JOTFORM_URL_FORMULAIRE=https://form.jotform.com/250000000000000
+JOTFORM_CHAMP_CODE=equipement
+JOTFORM_INTERVALLE_MIN=5
+```
+
+Puis `docker compose up -d api web`.
+
+Si le compte JotForm est hébergé dans la région européenne, ajouter
+`JOTFORM_API_BASE=https://eu-api.jotform.com` — sans quoi l'API mondiale
+répond « formulaire introuvable » sur un formulaire qui existe bien.
+
+### 3. Choisir le mode de récupération
+
+**Récupération périodique** (par défaut). Toutes les `JOTFORM_INTERVALLE_MIN`
+minutes, l'API interroge JotForm et importe ce qui est nouveau. C'est le mode
+qui convient quand le serveur est derrière la connexion de l'hôpital, sans
+adresse publique : rien n'a besoin d'entrer, c'est le serveur qui sort. Une
+coupure du lien ne perd rien — le repère de lecture ne bouge que sur une
+lecture réussie, et le tour suivant rattrape.
+
+**Webhook**, si le serveur est joignable depuis Internet. JotForm pousse
+chaque soumission dès qu'elle est remplie, sans attendre :
+
+```bash
+openssl rand -hex 24        # → JOTFORM_SECRET_WEBHOOK dans .env
+```
+
+puis, côté JotForm (Paramètres du formulaire → Intégrations → Webhooks) :
+
+```
+https://gmao.hopital.cd/api/integrations/jotform/<le-secret>
+```
+
+Sans `JOTFORM_SECRET_WEBHOOK`, la route refuse tout appel : c'est la seule
+route de l'API ouverte sans jeton, elle n'est jamais ouverte par défaut.
+
+Les deux modes peuvent tourner ensemble. Une soumission ne donne jamais deux
+demandes : un index d'unicité sur son identifiant l'interdit au niveau de la
+base, quel que soit le chemin emprunté.
+
+### 4. Imprimer les étiquettes
+
+Page **Équipements** → sélection → **Étiquettes**. Chaque étiquette porte
+désormais deux codes : le code-barres linéaire pour les douchettes du magasin,
+et le QR code pour les téléphones des services. Le QR mène au formulaire
+pré-rempli :
+
+```
+https://form.jotform.com/250000000000000?equipement=REA-0020
+```
+
+Il est encodé en correction d'erreur « H » : il reste lisible avec près d'un
+tiers de sa surface abîmée, ce qui n'est pas un luxe pour une étiquette
+soumise aux désinfectants.
+
+### Ce qu'il advient d'une soumission
+
+L'urgence déclarée est traduite en priorité : « urgence vitale » et « très
+urgent » donnent P1, « urgent » P2, « quand possible » P4. Sans réponse, la
+criticité de l'équipement tranche — un respirateur ne dort pas en P4.
+
+Le numéro d'inventaire est résolu contre le parc. S'il est inconnu ou absent,
+la demande est **créée quand même**, avec le code saisi et la localisation
+reportés dans sa description : un signalement qu'on ne sait pas classer reste
+un signalement.
+
+Le déclarant est identifié s'il figure dans l'annuaire, sinon la demande est
+portée par `JOTFORM_COMPTE_SERVICE` et son nom reste dans la description.
+
+Les réponses d'origine sont conservées telles quelles sur la demande. Dans la
+file des demandes, celles venues du formulaire portent un pictogramme ; le
+panneau de détail affiche le formulaire d'origine, réponse par réponse. Quand
+l'interprétation est contestée — « ce n'est pas ce que j'ai coché » — c'est
+là qu'on tranche.
+
+Une soumission sans objet **ni** description est écartée : il n'y a rien à
+transmettre au service technique. Le webhook répond quand même 200, sinon
+JotForm la représente indéfiniment.
+
+### Surveiller et rattraper
+
+**Paramètres → Formulaire externe** montre l'état du connecteur, la dernière
+lecture, le repère atteint, la dernière erreur, et les demandes reçues. Deux
+boutons : « Récupérer maintenant » et « Rattraper les 7 derniers jours »,
+après une coupure prolongée du lien Internet. Relire une période déjà
+importée ne crée pas de doublon.
+
+En SQL :
+
+```sql
+SELECT numero, equipement_code, objet, urgence_declaree, statut, reponses_brutes
+  FROM v_demandes_externes
+ ORDER BY recu_le DESC;
+
+SELECT * FROM integrations_etat;      -- où en est la lecture
+```
+
+### Vérifier l'interprétation
+
+Les règles d'appariement des champs et de lecture du vocabulaire d'urgence
+sont éprouvées par un banc d'essai qui tourne sans base de données :
+
+```bash
+npm run verifier-jotform --workspace=api
+```
+
+À relancer après toute modification du formulaire ou de `JOTFORM_CHAMPS`.
 
 ---
 

@@ -377,6 +377,20 @@ export type StatutOT =
 
 export type StatutDI = 'nouvelle' | 'en_analyse' | 'acceptee' | 'refusee' | 'transformee';
 
+/**
+ * Provenance d'une demande créée hors de l'application — formulaire en ligne
+ * rempli par un service de soins, passerelle d'un bureau de contrôle. Les
+ * réponses d'origine sont conservées telles quelles : en cas de doute sur une
+ * interprétation, on relit ce que le déclarant a réellement écrit.
+ */
+export interface OrigineExterne {
+  source: string;
+  formulaireId?: string;
+  soumissionId: string;
+  recuLe: ISODate;
+  reponses: Record<string, string>;
+}
+
 export interface DemandeIntervention {
   id: ID;
   numero: string;
@@ -396,6 +410,7 @@ export interface DemandeIntervention {
   motifRefus?: string;
   traiteParId?: ID;
   dateTraitement?: ISODate;
+  origineExterne?: OrigineExterne;
 }
 
 export interface LigneTemps {

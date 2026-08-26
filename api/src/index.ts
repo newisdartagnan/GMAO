@@ -10,6 +10,8 @@ import { initialiserEtat } from './etat.ts';
 import { peupler } from './peuplement.ts';
 import { enregistrerRoutes } from './routes/index.ts';
 import { ErreurMetier } from './routes/aide.ts';
+import { enregistrerCorpsFormulaire } from './integrations/corps-formulaire.ts';
+import { arreterCollecte, demarrerCollecte } from './integrations/collecte.ts';
 
 const app = Fastify({
   logger: {
@@ -71,14 +73,22 @@ async function demarrer(): Promise<void> {
     credentials: true,
   });
   await app.register(jwt, { secret: config.jwtSecret });
+  // Le webhook du formulaire externe arrive en multipart : Fastify ne lit que
+  // du JSON sans cela, et rejetterait la notification avec un 415.
+  enregistrerCorpsFormulaire(app);
   await enregistrerRoutes(app);
 
   await app.listen({ port: config.port, host: config.hote });
   app.log.info(`API à l'écoute sur ${config.hote}:${config.port}`);
+
+  // La collecte démarre après l'écoute : si JotForm est injoignable, cela ne
+  // doit pas empêcher l'hôpital d'utiliser sa GMAO.
+  demarrerCollecte((m, e) => (e ? app.log.warn({ err: e }, m) : app.log.info(m)));
 }
 
 async function arreter(signal: string): Promise<void> {
   app.log.info(`signal ${signal} reçu, arrêt en cours`);
+  arreterCollecte();
   try {
     await app.close();
     await pool.end();

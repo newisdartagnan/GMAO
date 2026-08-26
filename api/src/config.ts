@@ -39,6 +39,35 @@ export const config = {
   seedAuDemarrage: lire('SEED_AU_DEMARRAGE', 'true') === 'true',
 
   motDePasseParDefaut: lire('MOT_DE_PASSE_PAR_DEFAUT', 'gmao2026'),
+
+  /**
+   * Formulaire externe de demande d'intervention (JotForm).
+   *
+   * Tout est optionnel : sans clé d'API ni identifiant de formulaire le
+   * connecteur reste en sommeil et l'application fonctionne comme avant.
+   */
+  jotform: {
+    cleApi: lire('JOTFORM_API_KEY', ''),
+    formulaireId: lire('JOTFORM_FORMULAIRE_ID', ''),
+    /**
+     * Racine de l'API. À changer pour « https://eu-api.jotform.com » si le
+     * compte est hébergé dans la région européenne : l'API mondiale y répond
+     * « form not found » pour un formulaire pourtant bien existant.
+     */
+    apiBase: lire('JOTFORM_API_BASE', 'https://api.jotform.com'),
+    /** URL publique du formulaire, encodée dans le QR code des étiquettes. */
+    urlFormulaire: lire('JOTFORM_URL_FORMULAIRE', ''),
+    /** Nom du champ qui reçoit le code d'inventaire pré-rempli. */
+    champCode: lire('JOTFORM_CHAMP_CODE', 'equipement'),
+    /** Correspondance champ du formulaire → champ de la demande, en JSON. */
+    champs: lire('JOTFORM_CHAMPS', ''),
+    /** Secret partagé exigé sur l'appel webhook. Vide = webhook fermé. */
+    secretWebhook: lire('JOTFORM_SECRET_WEBHOOK', ''),
+    /** Période de récupération, en minutes. 0 = pas de récupération automatique. */
+    intervalleMin: Number(lire('JOTFORM_INTERVALLE_MIN', '5')),
+    /** Compte porteur des demandes dont le déclarant n'est pas identifié. */
+    compteService: lire('JOTFORM_COMPTE_SERVICE', ''),
+  },
 };
 
 export function verifierConfigProduction(): void {
@@ -51,4 +80,9 @@ export function verifierConfigProduction(): void {
   if (config.bdd.motDePasse === 'gmao') {
     throw new Error('DB_PASSWORD n’a pas été défini. Refus de démarrer en production avec le mot de passe par défaut.');
   }
+}
+
+/** Le connecteur ne peut interroger JotForm que s'il a de quoi le faire. */
+export function jotformRecuperationActive(): boolean {
+  return Boolean(config.jotform.cleApi && config.jotform.formulaireId && config.jotform.intervalleMin > 0);
 }
