@@ -60,7 +60,7 @@ import type { OrdreTravail, StatutEquipement } from '@gmao/partage';
 
 export function PageEquipementDetail() {
   const { id } = useParams();
-  const { base, index, alertes, commander } = useGMAO();
+  const { base, index, alertes, commander, configuration } = useGMAO();
   const naviguer = useNavigate();
   const [onglet, setOnglet] = useState('synthese');
   const [modale, setModale] = useState<'intervention' | 'deplacer' | 'compteur' | 'statut' | 'etiquette' | null>(null);
@@ -660,6 +660,7 @@ export function PageEquipementDetail() {
             designation={equipement.designation}
             service={index.services.get(equipement.serviceId)?.nom ?? ''}
             criticite={CRITICITE[equipement.criticite].libelle.toUpperCase()}
+            formulaire={configuration.formulaireExterne}
           />
         </div>
       </Modale>

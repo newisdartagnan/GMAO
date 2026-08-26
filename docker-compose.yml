@@ -30,8 +30,10 @@ services:
       - ./sauvegardes:/sauvegardes
     ports:
       # Publié sur la boucle locale seulement : l'accès distant se fait par
-      # tunnel, pas en exposant PostgreSQL au réseau.
-      - "127.0.0.1:${DB_PORT_HOTE:-5433}:5432"
+      # tunnel, pas en exposant PostgreSQL au réseau. Le port par défaut évite
+      # 5432 (PostgreSQL installé sur la machine) et 5433 (souvent pris par une
+      # autre pile de conteneurs).
+      - "127.0.0.1:${DB_PORT_HOTE:-5434}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-gmao} -d ${DB_NAME:-gmao}"]
       interval: 10s
@@ -65,6 +67,17 @@ services:
       CORS_ORIGINES: ${CORS_ORIGINES:-http://localhost:5173}
       SEED_AU_DEMARRAGE: ${SEED_AU_DEMARRAGE:-true}
       MOT_DE_PASSE_PAR_DEFAUT: ${MOT_DE_PASSE_PAR_DEFAUT:-gmao2026}
+      # Formulaire externe de signalement. Tout est facultatif : sans ces
+      # variables le connecteur dort et l'application ne change pas.
+      JOTFORM_API_KEY: ${JOTFORM_API_KEY:-}
+      JOTFORM_FORMULAIRE_ID: ${JOTFORM_FORMULAIRE_ID:-}
+      JOTFORM_API_BASE: ${JOTFORM_API_BASE:-https://api.jotform.com}
+      JOTFORM_URL_FORMULAIRE: ${JOTFORM_URL_FORMULAIRE:-}
+      JOTFORM_CHAMP_CODE: ${JOTFORM_CHAMP_CODE:-equipement}
+      JOTFORM_CHAMPS: ${JOTFORM_CHAMPS:-}
+      JOTFORM_SECRET_WEBHOOK: ${JOTFORM_SECRET_WEBHOOK:-}
+      JOTFORM_INTERVALLE_MIN: ${JOTFORM_INTERVALLE_MIN:-5}
+      JOTFORM_COMPTE_SERVICE: ${JOTFORM_COMPTE_SERVICE:-}
       TZ: ${TZ:-Africa/Kinshasa}
     expose:
       - "3001"
@@ -105,9 +118,43 @@ services:
              crond -f -l 8"
     profiles: ["planificateur"]
 
-  # Administration de la base : consultation, requêtes, export. Démarré à la
-  # demande avec `docker compose --profile admin up -d`, et jamais exposé
-  # au-delà de la boucle locale.
+  # Administration de la base avec pgAdmin 4 : c'est l'outil de référence pour
+  # PostgreSQL, et celui qui permet de reprendre les données de l'hôpital à la
+  # main — corriger une ligne, supprimer un jeu d'essai, importer un inventaire.
+  # La connexion au serveur est déjà déclarée : rien à saisir à la première
+  # ouverture, hormis le mot de passe de la base.
+  #
+  #      docker compose --profile admin up -d
+  #      → http://localhost:8082
+  #
+  # Après toute modification faite ici, demander à l'application de relire les
+  # tables : Paramètres › Base de données › « Recharger depuis la base ».
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: gmao-pgadmin
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@hopital.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?définir PGADMIN_PASSWORD dans le fichier .env}
+      # Sans cela pgAdmin réclame un mot de passe maître à chaque ouverture,
+      # en plus de celui du compte : une gêne sans gain sur un poste unique.
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      TZ: ${TZ:-Africa/Kinshasa}
+    volumes:
+      - donnees-pgadmin:/var/lib/pgadmin
+      - ./scripts/pgadmin-serveurs.json:/pgadmin4/servers.json:ro
+      # Les fichiers déposés ici sont visibles depuis l'assistant d'import
+      # de pgAdmin, et les exports y atterrissent.
+      - ./sauvegardes:/var/lib/pgadmin/storage/echanges
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-8082}:80"
+    profiles: ["admin"]
+
+  # Administration de la base, version légère : une seule page, pratique pour
+  # une requête ponctuelle sans ouvrir pgAdmin. Même profil « admin ».
   adminer:
     image: adminer:4-standalone
     container_name: gmao-adminer
@@ -125,3 +172,5 @@ services:
 volumes:
   donnees-postgres:
     name: gmao-donnees-postgres
+  donnees-pgadmin:
+    name: gmao-donnees-pgadmin

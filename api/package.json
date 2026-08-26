@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "migrer": "tsx src/cli/migrer.ts",
     "seed": "tsx src/cli/seed.ts",
-    "verifier-mapping": "tsx src/cli/verifier-mapping.ts"
+    "verifier-mapping": "tsx src/cli/verifier-mapping.ts",
+    "verifier-jotform": "tsx src/cli/verifier-jotform.ts"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.0",

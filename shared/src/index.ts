@@ -18,5 +18,6 @@ export * from './kpi';
 export * from './alertes';
 export * from './actions';
 export * from './inspections';
+export * from './liens';
 export * from './patch';
 export * from './donnees-demo';
