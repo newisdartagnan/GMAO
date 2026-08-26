@@ -30,8 +30,10 @@ services:
       - ./sauvegardes:/sauvegardes
     ports:
       # Publié sur la boucle locale seulement : l'accès distant se fait par
-      # tunnel, pas en exposant PostgreSQL au réseau.
-      - "127.0.0.1:${DB_PORT_HOTE:-5433}:5432"
+      # tunnel, pas en exposant PostgreSQL au réseau. Le port par défaut évite
+      # 5432 (PostgreSQL installé sur la machine) et 5433 (souvent pris par une
+      # autre pile de conteneurs).
+      - "127.0.0.1:${DB_PORT_HOTE:-5434}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-gmao} -d ${DB_NAME:-gmao}"]
       interval: 10s
