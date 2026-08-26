@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Inbox, Plus, ShieldQuestion } from 'lucide-react';
+import { Inbox, Plus, QrCode, ShieldQuestion } from 'lucide-react';
 import { CorpsPage, EnTetePage } from '@/layouts/Application';
 import { Carte } from '@/components/ui/Carte';
 import { Tableau } from '@/components/ui/Tableau';
@@ -60,7 +60,15 @@ export function PageDemandes() {
       tri: (d) => d.objet,
       rendu: (d) => (
         <div className="min-w-0">
-          <p className="truncate font-medium text-slate-800">{d.objet}</p>
+          <p className="flex items-center gap-1.5 truncate font-medium text-slate-800">
+            {d.origineExterne && (
+              <QrCode
+                className="size-3.5 shrink-0 text-marque-600"
+                aria-label="Reçue par le formulaire de signalement"
+              />
+            )}
+            <span className="truncate">{d.objet}</span>
+          </p>
           <p className="truncate text-xs text-slate-500">
             <LienEquipement id={d.equipementId} /> · {index.services.get(d.serviceId)?.nom}
           </p>
@@ -208,7 +216,13 @@ export function PageDemandes() {
               <BadgeStatutDI statut={selection.statut} />
               <BadgePriorite priorite={selection.urgenceDeclaree} />
               <Badge ton={IMPACT[selection.impactPatient].ton}>{IMPACT[selection.impactPatient].libelle}</Badge>
-              <Badge ton="neutre">reçue par {selection.canal.replace(/_/g, ' ')}</Badge>
+              {selection.origineExterne ? (
+                <Badge ton="info">
+                  <QrCode className="size-3" /> formulaire de signalement
+                </Badge>
+              ) : (
+                <Badge ton="neutre">reçue par {selection.canal.replace(/_/g, ' ')}</Badge>
+              )}
             </div>
 
             {selection.impactPatient === 'risque_vital' && (
@@ -233,6 +247,8 @@ export function PageDemandes() {
                   : []),
               ]}
             />
+
+            {selection.origineExterne && <ReponsesFormulaire origine={selection.origineExterne} />}
           </div>
         )}
       </Panneau>
@@ -272,6 +288,49 @@ export function PageDemandes() {
         }}
       />
     </>
+  );
+}
+
+/**
+ * Réponses telles que le service les a saisies.
+ *
+ * La demande affichée plus haut est une interprétation : l'urgence a été
+ * traduite en priorité, le code d'inventaire résolu en équipement. Quand cette
+ * lecture est contestée — « ce n'est pas ce que j'ai coché » — c'est ce bloc
+ * qui tranche, parce qu'il ne montre rien d'autre que l'original.
+ */
+function ReponsesFormulaire({ origine }: { origine: NonNullable<DemandeIntervention['origineExterne']> }) {
+  const [ouvert, setOuvert] = useState(false);
+  const entrees = Object.entries(origine.reponses ?? {});
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50">
+      <button
+        type="button"
+        onClick={() => setOuvert((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+      >
+        <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+          <QrCode className="size-3.5 text-marque-600" />
+          Formulaire d’origine — {entrees.length} réponse{entrees.length > 1 ? 's' : ''}
+        </span>
+        <span className="text-xs text-slate-500">{ouvert ? 'masquer' : 'afficher'}</span>
+      </button>
+      {ouvert && (
+        <dl className="space-y-1.5 border-t border-slate-200 px-3 py-2.5">
+          {entrees.map(([champ, valeur]) => (
+            <div key={champ} className="grid grid-cols-[140px_1fr] gap-2 text-xs">
+              <dt className="truncate text-slate-500">{champ}</dt>
+              <dd className="whitespace-pre-line text-slate-800">{valeur}</dd>
+            </div>
+          ))}
+          <div className="grid grid-cols-[140px_1fr] gap-2 border-t border-slate-200 pt-1.5 text-xs text-slate-400">
+            <dt>Soumission</dt>
+            <dd className="font-mono">{origine.soumissionId}</dd>
+          </div>
+        </dl>
+      )}
+    </div>
   );
 }
 

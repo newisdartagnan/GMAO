@@ -39,6 +39,14 @@ export async function peupler(remplacer = false): Promise<ResumePeuplement> {
       [hash],
     );
 
+    // Le peuplement ne se rejoue pas : la trace survit aux purges, de sorte
+    // qu'une base vidée pour recevoir les données réelles le reste.
+    await client.query(
+      `INSERT INTO installation (cle, valeur) VALUES ('peuplement_initial', $1)
+       ON CONFLICT (cle) DO NOTHING`,
+      [`jeu de démonstration, ${entites} entités`],
+    );
+
     return {
       entites,
       equipements: base.equipements.length,

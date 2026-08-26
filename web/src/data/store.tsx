@@ -22,7 +22,7 @@ import type {
 import { appliquerPatch, calculerAlertes } from '@gmao/partage';
 import type { AlerteCalculee } from '@gmao/partage';
 import { ErreurApi, api, ecrireJeton, lireJeton } from './api';
-import type { ReponseCommande } from './api';
+import type { ConfigurationClient, ReponseCommande } from './api';
 import { ecrireCache, lireCache, viderCache } from './persistance';
 
 /** Index par identifiant, pour éviter les `find` en O(n) dans les rendus. */
@@ -48,6 +48,8 @@ export interface ContexteGMAO {
   index: IndexGMAO;
   alertes: AlerteCalculee[];
   utilisateur: Utilisateur;
+  /** Réglages du déploiement : formulaire externe branché ou non. */
+  configuration: ConfigurationClient;
   /** L'état vient du cache local : consultation seule, écriture impossible. */
   horsLigne: boolean;
   dateInstantane: string | null;
@@ -96,6 +98,7 @@ export function FournisseurGMAO({ children }: { children: ReactNode }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [ecritureEnCours, setEcritureEnCours] = useState(false);
   const [erreurConnexion, setErreurConnexion] = useState<string | null>(null);
+  const [configuration, setConfiguration] = useState<ConfigurationClient>({ formulaireExterne: null });
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -103,6 +106,12 @@ export function FournisseurGMAO({ children }: { children: ReactNode }) {
       const [{ utilisateur: profil }, instantane] = await Promise.all([api.moi(), api.snapshot()]);
       setUtilisateur(profil);
       setBase(instantane);
+      // Réglage secondaire : son absence ne doit pas empêcher l'ouverture de
+      // l'application, seulement masquer le QR code des étiquettes.
+      api
+        .configuration()
+        .then(setConfiguration)
+        .catch(() => setConfiguration({ formulaireExterne: null }));
       setHorsLigne(false);
       setDateInstantane(new Date().toISOString());
       void ecrireCache(instantane);
@@ -180,6 +189,7 @@ export function FournisseurGMAO({ children }: { children: ReactNode }) {
       index,
       alertes,
       utilisateur,
+      configuration,
       horsLigne,
       dateInstantane,
       commander,
@@ -189,7 +199,7 @@ export function FournisseurGMAO({ children }: { children: ReactNode }) {
       effacerErreur: () => setErreur(null),
       ecritureEnCours,
     };
-  }, [base, index, alertes, utilisateur, horsLigne, dateInstantane, commander, charger, deconnexion, erreur, ecritureEnCours]);
+  }, [base, index, alertes, utilisateur, configuration, horsLigne, dateInstantane, commander, charger, deconnexion, erreur, ecritureEnCours]);
 
   if (chargement) return <EcranChargement />;
   if (!valeur) {

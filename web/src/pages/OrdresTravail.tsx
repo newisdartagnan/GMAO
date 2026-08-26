@@ -45,12 +45,12 @@ export function PageOrdresTravail() {
 
   const filtres = useMemo(() => {
     const q = normaliser(recherche);
-    const type = lire('type');
-    const priorite = lire('priorite');
-    const statut = lire('statut');
-    const equipeId = lire('equipe');
-    const serviceId = lire('service');
-    const execution = lire('execution');
+    const type = params.get('type') ?? '';
+    const priorite = params.get('priorite') ?? '';
+    const statut = params.get('statut') ?? '';
+    const equipeId = params.get('equipe') ?? '';
+    const serviceId = params.get('service') ?? '';
+    const execution = params.get('execution') ?? '';
     const debutMois = new Date();
     debutMois.setDate(1);
     debutMois.setHours(0, 0, 0, 0);

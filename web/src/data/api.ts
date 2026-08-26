@@ -49,6 +49,32 @@ export function ecrireJeton(jeton: string | null): void {
   }
 }
 
+/** Réglages de déploiement, distincts des données de l'hôpital. */
+export interface ConfigurationClient {
+  formulaireExterne: { url: string; champCode: string } | null;
+}
+
+export interface EtatIntegrations {
+  jotform: {
+    configure: boolean;
+    recuperationActive: boolean;
+    intervalleMin: number;
+    webhookOuvert: boolean;
+    formulaireId: string | null;
+    urlFormulaire: string | null;
+    champCode: string;
+    correspondance: Record<string, string[]>;
+    etat: {
+      derniereLecture: string | null;
+      dernierHorodatage: string | null;
+      soumissionsTraitees: number;
+      derniereErreur: string | null;
+    } | null;
+    demandesRecues: number;
+    derniereDemande: string | null;
+  };
+}
+
 export interface ReponseCommande<T> {
   resultat: T;
   patch: PatchBase;
@@ -131,6 +157,15 @@ export const api = {
   /* ---------------------------- Lecture ------------------------------ */
   snapshot: () => requete<BaseGMAO>('/snapshot'),
   sante: () => requete<{ statut: string }>('/sante'),
+  configuration: () => requete<ConfigurationClient>('/configuration'),
+
+  /* ------------------------- Formulaire externe ---------------------- */
+  etatIntegrations: () => requete<EtatIntegrations>('/integrations'),
+  synchroniserJotform: (depuis?: string) =>
+    poster<{ creees: DemandeIntervention[]; ignorees: number; rejets: { soumissionId: string; motif: string }[]; lues: number; depuis: string | null; jusqua: string | null }>(
+      '/integrations/jotform/synchroniser',
+      depuis ? { depuis } : {},
+    ),
 
   /* ------------------------------ Parc ------------------------------- */
   creerEquipement: (d: BrouillonEquipement) =>

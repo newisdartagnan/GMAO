@@ -15,6 +15,7 @@
     "@gmao/partage": "*",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.469.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.1",
