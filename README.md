@@ -136,9 +136,22 @@ connexion au serveur est déjà déclarée sous le nom « GMAO — base de
 l'hôpital » : seul le mot de passe de la base (`DB_PASSWORD`) est demandé à la
 première ouverture.
 
-Le dossier `sauvegardes/` du dépôt est monté dans pgAdmin sous
-`echanges` : les fichiers CSV à importer s'y déposent, et les exports y
-atterrissent.
+Les fichiers CSV à importer se téléversent depuis la fenêtre d'import de
+pgAdmin (bouton **Upload**), et les exports se téléchargent par le navigateur.
+
+**Si pgAdmin ne répond pas sur son port :**
+
+```bash
+docker compose ps -a                 # gmao-pgadmin existe-t-il, dans quel état ?
+docker compose logs pgadmin --tail=40
+./scripts/verifier-configuration.sh  # PGADMIN_PASSWORD est-il renseigné ?
+./scripts/verifier-ports.sh          # le port est-il déjà pris ?
+```
+
+Trois causes, par ordre de fréquence : `PGADMIN_PASSWORD` vide — pgAdmin
+refuse alors de démarrer et le dit dans son journal ; le port déjà occupé par
+une autre application ; le premier démarrage encore en cours, qui prend une
+bonne minute le temps que pgAdmin construise sa base de configuration.
 
 ### Vues prêtes à l'emploi
 
@@ -278,161 +291,235 @@ le CSV et on recommence.
 ## Recevoir les demandes par formulaire
 
 Un aide-soignant qui constate une panne à 3 h du matin n'ouvrira pas la GMAO :
-il n'a pas de compte, et il a autre chose à faire. Il a un téléphone.
-L'étiquette collée sur l'équipement porte un QR code ; il le scanne, un
-formulaire s'ouvre avec le numéro d'inventaire déjà rempli, il décrit le
-problème. La demande arrive dans la file du biomédical, rattachée au bon
-équipement, avec sa priorité et son impact patient déjà interprétés.
+il n'a pas de compte, et il a autre chose à faire. Il a un téléphone. Le
+formulaire qu'il remplit devient une demande d'intervention, dans la file du
+service technique.
 
-```
-   étiquette QR   →   formulaire JotForm   →   GMAO
-   sur l'appareil     sur le téléphone         demande d'intervention
-```
+Deux fournisseurs sont pris en charge : **Microsoft Forms** (via Power
+Automate) et **JotForm**.
 
-### 1. Créer le formulaire
+### Faut-il un QR par équipement, ou un seul QR pour tout ?
 
-Sur JotForm, un formulaire avec ces questions. Ce qui compte est le **nom**
-de chaque question (Propriétés du champ → Field Details → Nom unique), pas son
-libellé affiché :
+Les deux, et ce n'est pas un compromis : ils ne servent pas la même chose.
 
-| Nom du champ | Type | Contenu |
+| | QR générique | QR par équipement |
 |---|---|---|
-| `equipement` | Texte court | Numéro d'inventaire — pré-rempli par le QR code |
-| `objet` | Texte court | Le problème en une ligne |
-| `description` | Texte long | Ce qui a été constaté |
-| `urgence` | Liste | Urgence vitale / Urgent / Normal / Quand possible |
-| `impact` | Liste | Risque vital / Report de soin / Gêne / Aucun |
-| `service` | Liste | Service demandeur |
-| `declarant` | Nom | Qui signale |
-| `local` | Texte court | Salle, box, chambre |
+| Où | Affiches de couloir, tableaux de service, arbre de canvas | Étiquette collée sur la machine |
+| Pour quoi | Plomberie, maçonnerie, menuiserie, un éclairage de circulation — tout ce qui n'a pas de numéro d'inventaire | Les équipements inventoriés : biomédical, groupes, climatisation, compresseurs |
+| Ce que le demandeur saisit | Bâtiment, salle, désignation | Rien de tout cela : le code est déjà là |
+| Ce que la GMAO en fait | Une demande rattachée à un lieu | Une demande **rattachée à la machine** |
 
-Seuls `equipement` et l'un de `objet` / `description` sont indispensables. Les
-autres affinent la qualification ; leur absence ne fait rien perdre.
+Le QR générique reste indispensable : une fuite dans un WC n'a pas de numéro
+d'inventaire, et une étiquette peut être décollée ou illisible.
 
-Un formulaire déjà en service et nommé autrement se raccorde par
-`JOTFORM_CHAMPS`, sans le refaire :
+Mais tout ce qui est à l'inventaire mérite son propre QR, pour une raison qui
+est la raison d'être d'une GMAO : **sans code, la demande ne s'attache à
+aucune machine.** Or c'est l'historique par machine qui fait tout le reste —
+le coût cumulé d'un climatiseur, son taux de panne, la décision de le
+remplacer plutôt que de le réparer une cinquième fois, le déclenchement d'une
+maintenance préventive. Une demande « climatiseur, MKL3, cuisine » est un
+ticket ; « CLI-0142 » est une donnée de maintenance.
+
+Accessoirement, cela retire trois questions au demandeur — bâtiment, salle,
+équipement — et supprime l'ambiguïté : il y a quarante climatiseurs à
+Monkole, et « le climatiseur de la cuisine » ne dit pas lequel.
+
+**Le même formulaire sert les deux.** Il suffit de lui ajouter une question
+qui reçoit le code, laissée vide quand on arrive par le QR générique.
+
+### 1. Préparer le formulaire
+
+Le formulaire de signalement en service convient tel quel. Une seule
+modification est nécessaire pour les QR par équipement : ajouter une question
+
+> **Code inventaire** *(rempli automatiquement — ne pas modifier)*
+
+en texte court, non obligatoire, placée en tête.
+
+Les questions sont reconnues **par leur libellé**, mot à mot. Celles du
+formulaire de Monkole le sont déjà :
+
+| Question du formulaire | Ce qu'elle alimente |
+|---|---|
+| Code inventaire | l'équipement, retrouvé à l'inventaire |
+| Nom et contact du demandeur | le déclarant |
+| Depuis quand le problème existe-t-il ? | l'ancienneté, reportée dans la demande |
+| Secteur | le corps de métier, reporté dans la demande |
+| Lieu (bâtiment / service) | le site ou le bâtiment |
+| Salle de lieux | le local |
+| Équipement / Installation concernée | la désignation libre de l'objet en panne |
+| Description du problème | la description, et l'objet en est tiré |
+| Priorité | la priorité : Haute → P1, Moyenne → P3, Basse → P4 |
+
+L'onglet **Paramètres → Formulaire externe** affiche les noms acceptés pour
+chaque case. Si un libellé change, `FORMULAIRE_CHAMPS` le raccorde sans
+toucher au code :
 
 ```
-JOTFORM_CHAMPS={"equipement":"tag_machine","objet":"panne_signalee"}
+FORMULAIRE_CHAMPS={"equipement":"Numéro GMAO","urgence":"Niveau de gravité"}
 ```
 
-L'onglet **Paramètres → Formulaire externe** affiche les noms que le serveur
-accepte pour chaque champ.
+### 2. Relever le paramètre de pré-remplissage
 
-### 2. Brancher la GMAO
+Dans l'éditeur du formulaire : **… → Obtenir un lien pré-rempli**, remplir la
+seule question « Code inventaire », copier le lien produit. Il ressemble à
 
-Dans `.env` :
+```
+https://forms.cloud.microsoft/r/u4qTeSeAUF?r8f3c1e0a4b24d0e9=TEST
+                                            └──── à relever ────┘
+```
+
+Ce nom de paramètre est propre à la question ; il ne change pas tant que la
+question n'est pas supprimée.
 
 ```ini
-JOTFORM_API_KEY=votre-cle-api            # Compte JotForm → Paramètres → API
-JOTFORM_FORMULAIRE_ID=250000000000000    # les chiffres à la fin de l'URL
-JOTFORM_URL_FORMULAIRE=https://form.jotform.com/250000000000000
-JOTFORM_CHAMP_CODE=equipement
-JOTFORM_INTERVALLE_MIN=5
+FORMULAIRE_SOURCE=microsoft
+FORMULAIRE_URL=https://forms.cloud.microsoft/r/u4qTeSeAUF
+FORMULAIRE_PARAM_CODE=r8f3c1e0a4b24d0e9
 ```
 
-Puis `docker compose up -d api web`.
+### 3. Choisir le chemin des réponses
 
-Si le compte JotForm est hébergé dans la région européenne, ajouter
-`JOTFORM_API_BASE=https://eu-api.jotform.com` — sans quoi l'API mondiale
-répond « formulaire introuvable » sur un formulaire qui existe bien.
+Microsoft Forms n'expose **pas** d'API de lecture : on ne peut pas
+l'interroger. Dans les deux cas, un flux Power Automate se déclenche à chaque
+soumission — *Quand une nouvelle réponse est envoyée* → *Obtenir les détails
+de la réponse*.
 
-### 3. Choisir le mode de récupération
+#### a) Webhook — si le serveur est joignable depuis Internet
 
-**Récupération périodique** (par défaut). Toutes les `JOTFORM_INTERVALLE_MIN`
-minutes, l'API interroge JotForm et importe ce qui est nouveau. C'est le mode
-qui convient quand le serveur est derrière la connexion de l'hôpital, sans
-adresse publique : rien n'a besoin d'entrer, c'est le serveur qui sort. Une
-coupure du lien ne perd rien — le repère de lecture ne bouge que sur une
-lecture réussie, et le tour suivant rattrape.
-
-**Webhook**, si le serveur est joignable depuis Internet. JotForm pousse
-chaque soumission dès qu'elle est remplie, sans attendre :
+Le flux appelle la GMAO. Immédiat, rien d'autre à installer.
 
 ```bash
-openssl rand -hex 24        # → JOTFORM_SECRET_WEBHOOK dans .env
+openssl rand -hex 24      # → FORMULAIRE_SECRET_WEBHOOK dans .env
 ```
 
-puis, côté JotForm (Paramètres du formulaire → Intégrations → Webhooks) :
+```ini
+MSFORMS_MODE=webhook
+FORMULAIRE_SECRET_WEBHOOK=<le secret>
+```
+
+Dans le flux, une action **HTTP** :
 
 ```
-https://gmao.hopital.cd/api/integrations/jotform/<le-secret>
+POST https://gmao.monkole.cd/api/integrations/formulaire/<le-secret>
+Content-Type: application/json
+
+{ "id": "@{triggerOutputs()?['body/resourceData/responseId']}",
+  "date": "@{body('Obtenir_les_détails_de_la_réponse')?['submitDate']}",
+  "reponses": {
+    "Code inventaire": "@{...}",
+    "Description du problème": "@{...}",
+    "Priorité": "@{...}"
+  } }
 ```
 
-Sans `JOTFORM_SECRET_WEBHOOK`, la route refuse tout appel : c'est la seule
-route de l'API ouverte sans jeton, elle n'est jamais ouverte par défaut.
+La disposition à plat est acceptée aussi — une propriété par question, sans
+l'enveloppe `reponses` — ce qui permet de construire le corps en glissant
+directement les champs.
 
-Les deux modes peuvent tourner ensemble. Une soumission ne donne jamais deux
-demandes : un index d'unicité sur son identifiant l'interdit au niveau de la
-base, quel que soit le chemin emprunté.
+#### b) Classeur — si le serveur n'a pas d'adresse publique
+
+C'est le cas d'une GMAO installée derrière la connexion de l'hôpital. Le flux
+ajoute une ligne dans un classeur Excel (action **Ajouter une ligne dans un
+tableau**), et la GMAO relit ce tableau. **Rien n'entre : c'est le serveur qui
+sort.**
+
+Il faut une inscription d'application dans Entra ID :
+
+1. **Entra ID → Inscriptions d'applications → Nouvelle inscription.**
+2. Relever l'**ID d'application** et l'**ID de locataire**.
+3. **Certificats et secrets → Nouveau secret client**, relever la valeur.
+4. **Autorisations d'API → Microsoft Graph → Autorisations d'application →
+   `Files.Read.All`**, puis **Accorder le consentement administrateur**.
+
+```ini
+MSFORMS_MODE=graph
+MSFORMS_TENANT_ID=<id de locataire>
+MSFORMS_CLIENT_ID=<id d'application>
+MSFORMS_CLIENT_SECRET=<secret>
+MSFORMS_CLASSEUR=site:monkole.sharepoint.com:/sites/Maintenance:/Documents partages/reponses.xlsx
+MSFORMS_TABLEAU=Tableau1
+FORMULAIRE_INTERVALLE_MIN=5
+```
+
+Deux écritures pour `MSFORMS_CLASSEUR` :
+
+```
+drive:<driveId>:/Documents/reponses.xlsx
+site:<hôte>:/sites/<nom>:/Documents partages/reponses.xlsx
+```
+
+Le repère de lecture est la colonne **ID** du tableau, que Forms incrémente.
+Les deux chemins peuvent cohabiter : l'identifiant de réponse sert de clé
+d'unicité, donc une réponse ne donne jamais deux demandes.
 
 ### 4. Imprimer les étiquettes
 
-Page **Équipements** → sélection → **Étiquettes**. Chaque étiquette porte
-désormais deux codes : le code-barres linéaire pour les douchettes du magasin,
-et le QR code pour les téléphones des services. Le QR mène au formulaire
-pré-rempli :
+Page **Équipements** → sélection → **Étiquettes**. Chaque étiquette porte deux
+codes : le code-barres linéaire pour les douchettes du magasin, et le QR pour
+les téléphones des services, qui mène au formulaire pré-rempli.
 
-```
-https://form.jotform.com/250000000000000?equipement=REA-0020
-```
+Le QR est encodé en correction « M » : sur une étiquette de deux centimètres,
+ce qui décide de la lecture est la taille d'un module, pas la marge de
+correction — la même URL demande 33 modules en « M » contre 45 en « H ».
 
-Il est encodé en correction d'erreur « H » : il reste lisible avec près d'un
-tiers de sa surface abîmée, ce qui n'est pas un luxe pour une étiquette
-soumise aux désinfectants.
+### Ce qu'il advient d'une réponse
 
-### Ce qu'il advient d'une soumission
+L'objet de la demande est tiré de la première phrase de la description, faute
+de champ dédié. L'ancienneté, le secteur, le déclarant non reconnu, le lieu et
+la désignation libre sont reportés dans la description plutôt que perdus.
 
-L'urgence déclarée est traduite en priorité : « urgence vitale » et « très
-urgent » donnent P1, « urgent » P2, « quand possible » P4. Sans réponse, la
-criticité de l'équipement tranche — un respirateur ne dort pas en P4.
+L'urgence déclarée reste **déclarée** : elle n'est jamais relevée d'office,
+même sur un équipement vital. C'est le service technique qui requalifie.
 
-Le numéro d'inventaire est résolu contre le parc. S'il est inconnu ou absent,
-la demande est **créée quand même**, avec le code saisi et la localisation
-reportés dans sa description : un signalement qu'on ne sait pas classer reste
-un signalement.
+Un code d'inventaire inconnu ne fait pas perdre la demande : elle est créée
+sans équipement, le code saisi reporté dans sa description. Une désignation
+libre — « climatiseur », « robinet » — n'est pas prise pour un code.
 
-Le déclarant est identifié s'il figure dans l'annuaire, sinon la demande est
-portée par `JOTFORM_COMPTE_SERVICE` et son nom reste dans la description.
+Une réponse sans description **ni** objet est écartée : il n'y a rien à
+transmettre. Le webhook répond quand même 200, sinon Power Automate la
+représente indéfiniment.
 
-Les réponses d'origine sont conservées telles quelles sur la demande. Dans la
-file des demandes, celles venues du formulaire portent un pictogramme ; le
-panneau de détail affiche le formulaire d'origine, réponse par réponse. Quand
-l'interprétation est contestée — « ce n'est pas ce que j'ai coché » — c'est
-là qu'on tranche.
+Les réponses d'origine sont conservées telles quelles et dépliables dans le
+panneau de détail de la demande. Quand l'interprétation est contestée — « ce
+n'est pas ce que j'ai coché » — c'est là qu'on tranche.
 
-Une soumission sans objet **ni** description est écartée : il n'y a rien à
-transmettre au service technique. Le webhook répond quand même 200, sinon
-JotForm la représente indéfiniment.
+### Le rattachement dépend du référentiel
+
+Une réponse qui indique « MKL2 » ne se rattache à un bâtiment que si `MKL2`
+existe dans les sites ou bâtiments de la GMAO. Tant que le référentiel n'est
+pas celui de l'établissement, ces demandes reviennent au service du compte
+`FORMULAIRE_COMPTE_SERVICE` — jamais au premier service de la liste, qui
+fausserait les statistiques.
+
+Charger les sites, bâtiments et locaux réels est donc le premier travail :
+voir **Reprendre la base à la main**.
 
 ### Surveiller et rattraper
 
 **Paramètres → Formulaire externe** montre l'état du connecteur, la dernière
-lecture, le repère atteint, la dernière erreur, et les demandes reçues. Deux
-boutons : « Récupérer maintenant » et « Rattraper les 7 derniers jours »,
-après une coupure prolongée du lien Internet. Relire une période déjà
-importée ne crée pas de doublon.
-
-En SQL :
+réception, le repère atteint, la dernière erreur et les demandes reçues. En
+mode classeur, deux boutons : « Récupérer maintenant » et « Rattraper les
+7 derniers jours ». Relire une période déjà importée ne crée pas de doublon.
 
 ```sql
 SELECT numero, equipement_code, objet, urgence_declaree, statut, reponses_brutes
-  FROM v_demandes_externes
- ORDER BY recu_le DESC;
+  FROM v_demandes_externes ORDER BY recu_le DESC;
 
 SELECT * FROM integrations_etat;      -- où en est la lecture
 ```
 
 ### Vérifier l'interprétation
 
-Les règles d'appariement des champs et de lecture du vocabulaire d'urgence
-sont éprouvées par un banc d'essai qui tourne sans base de données :
+Les règles d'appariement des questions et de lecture du vocabulaire d'urgence
+sont éprouvées par un banc d'essai qui tourne sans base de données, sur les
+libellés réels du formulaire :
 
 ```bash
-npm run verifier-jotform --workspace=api
+npm run verifier-formulaires --workspace=api
 ```
 
-À relancer après toute modification du formulaire ou de `JOTFORM_CHAMPS`.
+À relancer après toute modification du formulaire ou de `FORMULAIRE_CHAMPS`.
 
 ---
 
