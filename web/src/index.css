@@ -1,0 +1,95 @@
+@import 'tailwindcss';
+
+/*
+  Palette : le bleu-vert d'un service technique hospitalier, posé sur des gris
+  froids. Les couleurs de statut sont volontairement peu nombreuses — dans une
+  liste de 400 lignes, chaque teinte supplémentaire coûte en lisibilité.
+*/
+@theme {
+  --color-marque-50: #f0fdfa;
+  --color-marque-100: #ccfbf1;
+  --color-marque-200: #99f6e4;
+  --color-marque-300: #5eead4;
+  --color-marque-400: #2dd4bf;
+  --color-marque-500: #14b8a6;
+  --color-marque-600: #0d9488;
+  --color-marque-700: #0f766e;
+  --color-marque-800: #115e59;
+  --color-marque-900: #134e4a;
+  --color-marque-950: #042f2e;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-100 text-slate-800 antialiased;
+    font-family: var(--font-sans);
+  }
+
+  /* Chiffres alignés dans les tableaux d'indicateurs. */
+  .tabulaire {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-marque-600;
+  }
+}
+
+@layer components {
+  .carte {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+
+  .champ {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800
+           placeholder:text-slate-400 focus:border-marque-500 focus:ring-2 focus:ring-marque-500/20
+           disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400;
+  }
+
+  .etiquette-champ {
+    @apply mb-1 block text-xs font-medium tracking-wide text-slate-600 uppercase;
+  }
+
+  .lien {
+    @apply text-marque-700 underline-offset-2 hover:underline;
+  }
+
+  /* Ligne de tableau cliquable */
+  .ligne-cliquable {
+    @apply cursor-pointer transition-colors hover:bg-marque-50/60;
+  }
+}
+
+@media print {
+  .sans-impression {
+    display: none !important;
+  }
+  body {
+    @apply bg-white;
+  }
+  .carte {
+    @apply border-slate-300 shadow-none;
+    break-inside: avoid;
+  }
+}
