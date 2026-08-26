@@ -654,7 +654,7 @@ function OngletIntegrations() {
     void recharger();
   }, []);
 
-  const jf = etat?.jotform;
+  const f = etat?.formulaire;
   const externes = base.demandes.filter((d) => d.origineExterne);
   const exemple = base.equipements[0];
 
@@ -662,11 +662,11 @@ function OngletIntegrations() {
     setEnCours(true);
     setMessage(null);
     try {
-      const r = await api.synchroniserJotform(depuis);
+      const r = await api.synchroniserFormulaire(depuis);
       setMessage({
         ton: 'succes',
         texte:
-          `${r.lues} soumission(s) lue(s) — ${r.creees.length} demande(s) créée(s), ` +
+          `${r.lues} réponse(s) lue(s) — ${r.creees.length} demande(s) créée(s), ` +
           `${r.ignorees} déjà connue(s)` +
           (r.rejets.length ? `, ${r.rejets.length} écartée(s) : ${r.rejets[0].motif}` : '.'),
       });
@@ -678,7 +678,7 @@ function OngletIntegrations() {
     }
   };
 
-  if (!jf) {
+  if (!f) {
     return (
       <Carte titre="Formulaire externe">
         <p className="text-sm text-slate-500">État du connecteur indisponible.</p>
@@ -686,67 +686,96 @@ function OngletIntegrations() {
     );
   }
 
+  const NOM_SOURCE: Record<string, string> = {
+    jotform: 'JotForm',
+    'microsoft-forms': 'Microsoft Forms',
+    microsoft: 'Microsoft Forms',
+  };
+  const nomSource = f.source ? (NOM_SOURCE[f.source] ?? f.source) : 'aucun';
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-4">
-        <Carte titre="Connecteur JotForm" icone={<QrCode className="size-4 text-slate-400" />}>
-          {!jf.configure && !jf.webhookOuvert && (
+        <Carte titre={`Connecteur — ${nomSource}`} icone={<QrCode className="size-4 text-slate-400" />}>
+          {!f.branche && (
             <div className="mb-3">
-              <Encart ton="attention" titre="Connecteur inactif">
-                Aucun formulaire n’est branché. Renseignez <span className="font-mono text-xs">JOTFORM_API_KEY</span> et{' '}
-                <span className="font-mono text-xs">JOTFORM_FORMULAIRE_ID</span> dans le fichier{' '}
-                <span className="font-mono text-xs">.env</span>, puis redémarrez la pile Docker.
+              <Encart ton="attention" titre="Aucun formulaire branché">
+                Renseignez <span className="font-mono text-xs">FORMULAIRE_SOURCE</span> dans le fichier{' '}
+                <span className="font-mono text-xs">.env</span>, puis redémarrez la pile. La marche à suivre est dans le
+                README, section « Recevoir les demandes par formulaire ».
               </Encart>
             </div>
           )}
           <Definitions
             colonnes={1}
             items={[
-              { label: 'Formulaire', valeur: jf.formulaireId ? <span className="font-mono text-xs">{jf.formulaireId}</span> : '—' },
+              { label: 'Fournisseur', valeur: nomSource },
+              {
+                label: 'Acheminement',
+                valeur:
+                  f.mode === 'graph'
+                    ? 'Power Automate → classeur Excel, relu par la GMAO'
+                    : f.mode === 'webhook'
+                      ? 'Power Automate → appel direct de la GMAO'
+                      : 'API du fournisseur',
+              },
+              {
+                label: 'Référence',
+                valeur: f.reference ? <span className="font-mono text-[11px] break-all">{f.reference}</span> : '—',
+              },
               {
                 label: 'Récupération',
-                valeur: jf.recuperationActive ? (
-                  <Badge ton="succes">toutes les {jf.intervalleMin} min</Badge>
+                valeur: f.recuperationActive ? (
+                  <Badge ton="succes">toutes les {f.intervalleMin} min</Badge>
                 ) : (
                   <Badge ton="neutre">inactive</Badge>
                 ),
               },
               {
                 label: 'Webhook',
-                valeur: jf.webhookOuvert ? <Badge ton="succes">ouvert</Badge> : <Badge ton="neutre">fermé</Badge>,
+                valeur: f.webhookOuvert ? <Badge ton="succes">ouvert</Badge> : <Badge ton="neutre">fermé</Badge>,
               },
-              { label: 'Dernière lecture', valeur: jf.etat?.derniereLecture ? dateHeure(jf.etat.derniereLecture) : 'jamais' },
+              { label: 'Dernière réception', valeur: f.etat?.derniereLecture ? dateHeure(f.etat.derniereLecture) : 'jamais' },
               {
                 label: 'Repère de lecture',
-                valeur: jf.etat?.dernierHorodatage ? <span className="font-mono text-xs">{jf.etat.dernierHorodatage}</span> : '—',
+                valeur: f.etat?.dernierHorodatage ? <span className="font-mono text-xs">{f.etat.dernierHorodatage}</span> : '—',
               },
               { label: 'Demandes reçues', valeur: nombre(externes.length, 0) },
             ]}
           />
 
-          {jf.etat?.derniereErreur && (
+          {f.etat?.derniereErreur && (
             <div className="mt-3">
               <Encart ton="danger" titre="Dernière tentative en échec">
-                {jf.etat.derniereErreur}
+                {f.etat.derniereErreur}
               </Encart>
             </div>
           )}
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Bouton onClick={() => void synchroniser()} disabled={!jf.configure || enCours}>
-              <RefreshCw className={`size-4 ${enCours ? 'animate-spin' : ''}`} /> Récupérer maintenant
-            </Bouton>
-            <Bouton
-              variante="discret"
-              disabled={!jf.configure || enCours}
-              onClick={() => {
-                const il7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 19).replace('T', ' ');
-                void synchroniser(il7);
-              }}
-            >
-              Rattraper les 7 derniers jours
-            </Bouton>
-          </div>
+          {f.recuperationActive ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Bouton onClick={() => void synchroniser()} disabled={enCours}>
+                <RefreshCw className={`size-4 ${enCours ? 'animate-spin' : ''}`} /> Récupérer maintenant
+              </Bouton>
+              <Bouton
+                variante="discret"
+                disabled={enCours}
+                onClick={() => {
+                  const il7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+                  void synchroniser(il7);
+                }}
+              >
+                Rattraper les 7 derniers jours
+              </Bouton>
+            </div>
+          ) : (
+            f.webhookOuvert && (
+              <p className="mt-4 text-xs text-slate-500">
+                Les réponses arrivent d’elles-mêmes : il n’y a rien à récupérer. Si l’une manque, c’est le flux Power
+                Automate qu’il faut regarder, dans son historique d’exécution.
+              </p>
+            )
+          )}
           {message && (
             <div className="mt-3">
               <Encart ton={message.ton}>{message.texte}</Encart>
@@ -754,9 +783,9 @@ function OngletIntegrations() {
           )}
         </Carte>
 
-        <Carte titre="Champs reconnus" sousTitre="Noms acceptés dans le formulaire, par ordre de priorité">
+        <Carte titre="Questions reconnues" sousTitre="Noms acceptés dans le formulaire, par ordre de priorité">
           <dl className="space-y-1.5">
-            {Object.entries(jf.correspondance).map(([champ, noms]) => (
+            {Object.entries(f.correspondance).map(([champ, noms]) => (
               <div key={champ} className="grid grid-cols-[120px_1fr] gap-2 text-sm">
                 <dt className="font-medium text-slate-700">{champ}</dt>
                 <dd className="font-mono text-xs text-slate-500">{noms.join(', ')}</dd>
@@ -764,31 +793,35 @@ function OngletIntegrations() {
             ))}
           </dl>
           <p className="mt-3 text-xs text-slate-500">
-            Ces noms se redéfinissent par la variable <span className="font-mono">JOTFORM_CHAMPS</span> si le formulaire
-            existant nomme ses questions autrement.
+            L’appariement porte sur le libellé de la question, mot à mot. Ces noms se redéfinissent par la variable{' '}
+            <span className="font-mono">FORMULAIRE_CHAMPS</span> si le formulaire en service nomme ses questions
+            autrement.
           </p>
         </Carte>
       </div>
 
       <div className="space-y-4">
         <Carte titre="Étiquettes à coller" sousTitre="Ce que le QR code ouvre">
-          {jf.urlFormulaire && exemple ? (
+          {f.url && exemple ? (
             <>
               <p className="text-sm text-slate-600">
                 Chaque étiquette d’inventaire porte un QR code propre à l’équipement. Le service scanne, le formulaire
-                s’ouvre avec le numéro déjà rempli, et la demande arrive ici sans passer par la GMAO.
+                s’ouvre avec le numéro déjà rempli, et la demande arrive rattachée à la bonne machine.
               </p>
               <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 font-mono text-[11px] break-all text-slate-600">
-                {lienFormulaireExterne(jf.urlFormulaire, jf.champCode, exemple.code)}
+                {lienFormulaireExterne(f.url, f.paramCode, exemple.code)}
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                Les étiquettes s’impriment depuis la page Équipements, sélection puis « Étiquettes ».
+                Les étiquettes s’impriment depuis la page Équipements, sélection puis « Étiquettes ». Le QR générique
+                affiché dans les couloirs reste utile pour tout ce qui n’est pas à l’inventaire — plomberie, maçonnerie,
+                un éclairage de circulation.
               </p>
             </>
           ) : (
             <Encart ton="attention">
-              Renseignez <span className="font-mono text-xs">JOTFORM_URL_FORMULAIRE</span> pour que les étiquettes
-              portent un QR code.
+              Renseignez <span className="font-mono text-xs">FORMULAIRE_URL</span> et{' '}
+              <span className="font-mono text-xs">FORMULAIRE_PARAM_CODE</span> pour que les étiquettes portent un QR
+              code.
             </Encart>
           )}
         </Carte>

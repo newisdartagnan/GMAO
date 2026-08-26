@@ -55,15 +55,19 @@ export interface ConfigurationClient {
 }
 
 export interface EtatIntegrations {
-  jotform: {
-    configure: boolean;
+  formulaire: {
+    source: string | null;
+    branche: boolean;
     recuperationActive: boolean;
     intervalleMin: number;
     webhookOuvert: boolean;
-    formulaireId: string | null;
-    urlFormulaire: string | null;
-    champCode: string;
+    url: string | null;
+    paramCode: string;
     correspondance: Record<string, string[]>;
+    /** Ce qui identifie le formulaire côté fournisseur. */
+    reference: string | null;
+    /** « api » pour JotForm, « graph » ou « webhook » pour Microsoft. */
+    mode: string;
     etat: {
       derniereLecture: string | null;
       dernierHorodatage: string | null;
@@ -161,9 +165,9 @@ export const api = {
 
   /* ------------------------- Formulaire externe ---------------------- */
   etatIntegrations: () => requete<EtatIntegrations>('/integrations'),
-  synchroniserJotform: (depuis?: string) =>
+  synchroniserFormulaire: (depuis?: string) =>
     poster<{ creees: DemandeIntervention[]; ignorees: number; rejets: { soumissionId: string; motif: string }[]; lues: number; depuis: string | null; jusqua: string | null }>(
-      '/integrations/jotform/synchroniser',
+      '/integrations/synchroniser',
       depuis ? { depuis } : {},
     ),
 
