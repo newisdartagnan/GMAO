@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Database, Download, KeyRound, RefreshCw, ShieldCheck, UserPlus } from 'lucide-react';
+import { Database, Download, KeyRound, QrCode, RefreshCw, ShieldCheck, UserPlus } from 'lucide-react';
 import { CorpsPage, EnTetePage } from '@/layouts/Application';
 import { Carte } from '@/components/ui/Carte';
 import { Tableau } from '@/components/ui/Tableau';
@@ -12,15 +12,16 @@ import { Definitions, Encart } from '@/components/ui/Info';
 import { Champ, Liste, Saisie } from '@/components/ui/Champs';
 import { useGMAO } from '@/data/store';
 import { api } from '@/data/api';
+import type { EtatIntegrations } from '@/data/api';
 import { exporterJSON, telecharger, versCSV } from '@/data/persistance';
-import { dateHeure } from '@gmao/partage';
+import { dateHeure, lienFormulaireExterne } from '@gmao/partage';
 import { montant, nombre } from '@gmao/partage';
 import { CRITICITE, DOMAINE, REFERENTIEL, ROLE } from '@gmao/partage';
 import type { BaseGMAO, FamilleEquipement, Local, ServiceHospitalier, Site } from '@gmao/partage';
 
 export function PageParametres() {
   const { base, index, utilisateur, rafraichir } = useGMAO();
-  const [vue, setVue] = useState<'referentiels' | 'organisation' | 'comptes' | 'base'>('referentiels');
+  const [vue, setVue] = useState<'referentiels' | 'organisation' | 'comptes' | 'integrations' | 'base'>('referentiels');
   const estAdministrateur = utilisateur.role === 'admin';
 
   const colonnesServices: Colonne<ServiceHospitalier>[] = [
@@ -112,6 +113,7 @@ export function PageParametres() {
                     { valeur: 'referentiels', libelle: 'Référentiels' },
                     { valeur: 'organisation', libelle: 'Organisation' },
                     { valeur: 'comptes', libelle: 'Comptes' },
+                    { valeur: 'integrations', libelle: 'Formulaire externe' },
                     { valeur: 'base', libelle: 'Base de données' },
                   ]
                 : [
@@ -213,6 +215,7 @@ export function PageParametres() {
 
         {vue === 'comptes' && (estAdministrateur ? <OngletComptes /> : <OngletMonCompte />)}
 
+        {vue === 'integrations' && estAdministrateur && <OngletIntegrations />}
         {vue === 'base' && estAdministrateur && <OngletBase base={base} onRecharger={rafraichir} />}
       </CorpsPage>
 
@@ -629,6 +632,194 @@ function OngletMonCompte() {
 /* ------------------------------------------------------------------ */
 /* Base de données                                                     */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Formulaire externe de signalement.
+ *
+ * Le connecteur se configure par variables d'environnement, pas ici : ce qui
+ * relève du déploiement ne doit pas être modifiable depuis une session
+ * ouverte. Cet onglet dit ce que le serveur a compris de sa configuration, ce
+ * qu'il a reçu, et permet de rattraper une période manquante après une
+ * coupure du lien Internet — ce qui, à Kinshasa, n'est pas une hypothèse
+ * d'école.
+ */
+function OngletIntegrations() {
+  const { base, index } = useGMAO();
+  const [etat, setEtat] = useState<EtatIntegrations | null>(null);
+  const [message, setMessage] = useState<{ ton: 'succes' | 'danger'; texte: string } | null>(null);
+  const [enCours, setEnCours] = useState(false);
+
+  const recharger = () => api.etatIntegrations().then(setEtat).catch(() => setEtat(null));
+  useEffect(() => {
+    void recharger();
+  }, []);
+
+  const jf = etat?.jotform;
+  const externes = base.demandes.filter((d) => d.origineExterne);
+  const exemple = base.equipements[0];
+
+  const synchroniser = async (depuis?: string) => {
+    setEnCours(true);
+    setMessage(null);
+    try {
+      const r = await api.synchroniserJotform(depuis);
+      setMessage({
+        ton: 'succes',
+        texte:
+          `${r.lues} soumission(s) lue(s) — ${r.creees.length} demande(s) créée(s), ` +
+          `${r.ignorees} déjà connue(s)` +
+          (r.rejets.length ? `, ${r.rejets.length} écartée(s) : ${r.rejets[0].motif}` : '.'),
+      });
+      await recharger();
+    } catch (e) {
+      setMessage({ ton: 'danger', texte: e instanceof Error ? e.message : 'Récupération impossible' });
+    } finally {
+      setEnCours(false);
+    }
+  };
+
+  if (!jf) {
+    return (
+      <Carte titre="Formulaire externe">
+        <p className="text-sm text-slate-500">État du connecteur indisponible.</p>
+      </Carte>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
+        <Carte titre="Connecteur JotForm" icone={<QrCode className="size-4 text-slate-400" />}>
+          {!jf.configure && !jf.webhookOuvert && (
+            <div className="mb-3">
+              <Encart ton="attention" titre="Connecteur inactif">
+                Aucun formulaire n’est branché. Renseignez <span className="font-mono text-xs">JOTFORM_API_KEY</span> et{' '}
+                <span className="font-mono text-xs">JOTFORM_FORMULAIRE_ID</span> dans le fichier{' '}
+                <span className="font-mono text-xs">.env</span>, puis redémarrez la pile Docker.
+              </Encart>
+            </div>
+          )}
+          <Definitions
+            colonnes={1}
+            items={[
+              { label: 'Formulaire', valeur: jf.formulaireId ? <span className="font-mono text-xs">{jf.formulaireId}</span> : '—' },
+              {
+                label: 'Récupération',
+                valeur: jf.recuperationActive ? (
+                  <Badge ton="succes">toutes les {jf.intervalleMin} min</Badge>
+                ) : (
+                  <Badge ton="neutre">inactive</Badge>
+                ),
+              },
+              {
+                label: 'Webhook',
+                valeur: jf.webhookOuvert ? <Badge ton="succes">ouvert</Badge> : <Badge ton="neutre">fermé</Badge>,
+              },
+              { label: 'Dernière lecture', valeur: jf.etat?.derniereLecture ? dateHeure(jf.etat.derniereLecture) : 'jamais' },
+              {
+                label: 'Repère de lecture',
+                valeur: jf.etat?.dernierHorodatage ? <span className="font-mono text-xs">{jf.etat.dernierHorodatage}</span> : '—',
+              },
+              { label: 'Demandes reçues', valeur: nombre(externes.length, 0) },
+            ]}
+          />
+
+          {jf.etat?.derniereErreur && (
+            <div className="mt-3">
+              <Encart ton="danger" titre="Dernière tentative en échec">
+                {jf.etat.derniereErreur}
+              </Encart>
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Bouton onClick={() => void synchroniser()} disabled={!jf.configure || enCours}>
+              <RefreshCw className={`size-4 ${enCours ? 'animate-spin' : ''}`} /> Récupérer maintenant
+            </Bouton>
+            <Bouton
+              variante="discret"
+              disabled={!jf.configure || enCours}
+              onClick={() => {
+                const il7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+                void synchroniser(il7);
+              }}
+            >
+              Rattraper les 7 derniers jours
+            </Bouton>
+          </div>
+          {message && (
+            <div className="mt-3">
+              <Encart ton={message.ton}>{message.texte}</Encart>
+            </div>
+          )}
+        </Carte>
+
+        <Carte titre="Champs reconnus" sousTitre="Noms acceptés dans le formulaire, par ordre de priorité">
+          <dl className="space-y-1.5">
+            {Object.entries(jf.correspondance).map(([champ, noms]) => (
+              <div key={champ} className="grid grid-cols-[120px_1fr] gap-2 text-sm">
+                <dt className="font-medium text-slate-700">{champ}</dt>
+                <dd className="font-mono text-xs text-slate-500">{noms.join(', ')}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-slate-500">
+            Ces noms se redéfinissent par la variable <span className="font-mono">JOTFORM_CHAMPS</span> si le formulaire
+            existant nomme ses questions autrement.
+          </p>
+        </Carte>
+      </div>
+
+      <div className="space-y-4">
+        <Carte titre="Étiquettes à coller" sousTitre="Ce que le QR code ouvre">
+          {jf.urlFormulaire && exemple ? (
+            <>
+              <p className="text-sm text-slate-600">
+                Chaque étiquette d’inventaire porte un QR code propre à l’équipement. Le service scanne, le formulaire
+                s’ouvre avec le numéro déjà rempli, et la demande arrive ici sans passer par la GMAO.
+              </p>
+              <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 font-mono text-[11px] break-all text-slate-600">
+                {lienFormulaireExterne(jf.urlFormulaire, jf.champCode, exemple.code)}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Les étiquettes s’impriment depuis la page Équipements, sélection puis « Étiquettes ».
+              </p>
+            </>
+          ) : (
+            <Encart ton="attention">
+              Renseignez <span className="font-mono text-xs">JOTFORM_URL_FORMULAIRE</span> pour que les étiquettes
+              portent un QR code.
+            </Encart>
+          )}
+        </Carte>
+
+        <Carte sansPadding titre="Dernières demandes reçues">
+          {externes.length ? (
+            <ul className="divide-y divide-slate-100">
+              {externes.slice(0, 12).map((d) => (
+                <li key={d.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-800">{d.objet}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {d.numero} · {index.services.get(d.serviceId)?.nom ?? '—'} · {dateHeure(d.dateCreation)}
+                    </p>
+                  </div>
+                  <Badge ton="neutre" compact>
+                    {d.statut.replace(/_/g, ' ')}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 py-6 text-center text-sm text-slate-500">
+              Aucune demande n’est encore arrivée par le formulaire.
+            </p>
+          )}
+        </Carte>
+      </div>
+    </div>
+  );
+}
 
 function OngletBase({ base, onRecharger }: { base: BaseGMAO; onRecharger: () => Promise<void> }) {
   const [stats, setStats] = useState<Awaited<ReturnType<typeof api.statistiquesBase>> | null>(null);

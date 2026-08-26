@@ -7,6 +7,7 @@ import { routesInterventions } from './interventions.ts';
 import { routesLogistique } from './logistique.ts';
 import { routesInspections } from './inspections.ts';
 import { routesAdmin } from './admin.ts';
+import { routesIntegrations } from './integrations.ts';
 
 export async function enregistrerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sante', async () => ({
@@ -30,4 +31,5 @@ export async function enregistrerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(routesLogistique);
   await app.register(routesInspections);
   await app.register(routesAdmin);
+  await app.register(routesIntegrations);
 }

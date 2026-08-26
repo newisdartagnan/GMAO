@@ -1,0 +1,3 @@
+code,designation,famille_code,marque,modele,numero_serie,classe_dm,criticite,local_code,service_code,date_acquisition,date_mise_en_service,valeur_achat,fin_garantie,risque_infectieux,notes
+REA-0101,Respirateur de réanimation,F-RESP,Dräger,Evita V300,SN-99120345,IIb,1,LOC-REA-01,REA,2022-03-14,2022-04-02,48500.00,2027-04-02,oui,Poste 1 — box 3
+IMG-0101,Échographe mobile,F-IMG,Mindray,DC-70,SN-77201188,IIa,2,LOC-URG-02,URG,2023-09-01,2023-09-20,22000.00,,non,
