@@ -339,17 +339,24 @@ en texte court, non obligatoire, placée en tête.
 Les questions sont reconnues **par leur libellé**, mot à mot. Celles du
 formulaire de Monkole le sont déjà :
 
-| Question du formulaire | Ce qu'elle alimente |
+| Colonne du classeur | Ce qu'elle alimente |
 |---|---|
-| Code inventaire | l'équipement, retrouvé à l'inventaire |
-| Nom et contact du demandeur | le déclarant |
-| Depuis quand le problème existe-t-il ? | l'ancienneté, reportée dans la demande |
-| Secteur | le corps de métier, reporté dans la demande |
-| Lieu (bâtiment / service) | le site ou le bâtiment |
-| Salle de lieux | le local |
-| Équipement / Installation concernée | la désignation libre de l'objet en panne |
-| Description du problème | la description, et l'objet en est tiré |
-| Priorité | la priorité : Haute → P1, Moyenne → P3, Basse → P4 |
+| `Id_formulaire` | l'identifiant de réponse, et le repère de lecture |
+| `Date de plainté` | l'horodatage de la demande |
+| `Code inventaire` *(à ajouter)* | l'équipement, retrouvé à l'inventaire |
+| `Nom du demandeur` | le déclarant |
+| `Date de dèbut du probleme` | l'ancienneté, reportée dans la demande |
+| `Secteur` | le corps de métier, reporté dans la demande |
+| `Lieu` | le site ou le bâtiment |
+| `Salle de lieu` | le local |
+| `Équipement` | la désignation libre de l'objet en panne |
+| `Description du problème` | la description, et l'objet en est tiré |
+| `Priorité` | la priorité : Haute → P1, Moyenne → P3, Basse → P4 |
+
+La première colonne porte l'identifiant, quel que soit son libellé. Les
+colonnes de service que Forms ajoute — `ID`, `Heure de début`, `Heure de fin`,
+`E-mail`, `Nom` — sont écartées des réponses : les lire comme des réponses
+ferait passer l'heure de début pour la date d'apparition du problème.
 
 L'onglet **Paramètres → Formulaire externe** affiche les noms acceptés pour
 chaque case. Si un libellé change, `FORMULAIRE_CHAMPS` le raccorde sans
@@ -378,86 +385,126 @@ FORMULAIRE_URL=https://forms.cloud.microsoft/r/u4qTeSeAUF
 FORMULAIRE_PARAM_CODE=r8f3c1e0a4b24d0e9
 ```
 
-### 3. Choisir le chemin des réponses
+### 3. Laisser la GMAO lire le classeur des réponses
 
-Microsoft Forms n'expose **pas** d'API de lecture : on ne peut pas
-l'interroger. Dans les deux cas, un flux Power Automate se déclenche à chaque
-soumission — *Quand une nouvelle réponse est envoyée* → *Obtenir les détails
-de la réponse*.
+Microsoft Forms n'expose **aucune API de lecture des réponses** — c'est le mur
+contre lequel on se cogne en cherchant de ce côté. En revanche, Forms recopie
+de lui-même chaque réponse dans un classeur Excel sur OneDrive,
+**nativement, sans automatisation**. C'est par là qu'on passe.
 
-#### a) Webhook — si le serveur est joignable depuis Internet
+> L'autre voie — une action HTTP dans Power Automate qui appellerait la GMAO —
+> est un connecteur **payant**, indisponible sur un compte Microsoft personnel,
+> et elle suppose en plus que le serveur soit joignable depuis Internet. Elle
+> reste possible (`MSFORMS_MODE=webhook`), mais ce n'est pas la voie par défaut.
 
-Le flux appelle la GMAO. Immédiat, rien d'autre à installer.
+#### Inscrire une application
 
-```bash
-openssl rand -hex 24      # → FORMULAIRE_SECRET_WEBHOOK dans .env
-```
+Un compte Microsoft **personnel** (outlook.fr, hotmail.com, live.fr) n'a pas
+de locataire où accorder des autorisations d'application. Le seul flux
+possible est donc le flux **délégué** : la GMAO agit au nom du compte
+propriétaire du classeur, qui l'autorise une fois.
 
-```ini
-MSFORMS_MODE=webhook
-FORMULAIRE_SECRET_WEBHOOK=<le secret>
-```
+Sur [entra.microsoft.com](https://entra.microsoft.com), connecté avec le
+compte qui possède le classeur — **Inscriptions d'applications → Nouvelle
+inscription** :
 
-Dans le flux, une action **HTTP** :
+| Réglage | Valeur |
+|---|---|
+| Nom | `GMAO — lecture des signalements` |
+| Types de comptes | **Comptes Microsoft personnels uniquement** (ou « … et comptes personnels ») |
+| URI de redirection | aucune |
 
-```
-POST https://gmao.monkole.cd/api/integrations/formulaire/<le-secret>
-Content-Type: application/json
+Puis, dans l'inscription créée :
 
-{ "id": "@{triggerOutputs()?['body/resourceData/responseId']}",
-  "date": "@{body('Obtenir_les_détails_de_la_réponse')?['submitDate']}",
-  "reponses": {
-    "Code inventaire": "@{...}",
-    "Description du problème": "@{...}",
-    "Priorité": "@{...}"
-  } }
-```
-
-La disposition à plat est acceptée aussi — une propriété par question, sans
-l'enveloppe `reponses` — ce qui permet de construire le corps en glissant
-directement les champs.
-
-#### b) Classeur — si le serveur n'a pas d'adresse publique
-
-C'est le cas d'une GMAO installée derrière la connexion de l'hôpital. Le flux
-ajoute une ligne dans un classeur Excel (action **Ajouter une ligne dans un
-tableau**), et la GMAO relit ce tableau. **Rien n'entre : c'est le serveur qui
-sort.**
-
-Il faut une inscription d'application dans Entra ID :
-
-1. **Entra ID → Inscriptions d'applications → Nouvelle inscription.**
-2. Relever l'**ID d'application** et l'**ID de locataire**.
-3. **Certificats et secrets → Nouveau secret client**, relever la valeur.
-4. **Autorisations d'API → Microsoft Graph → Autorisations d'application →
-   `Files.Read.All`**, puis **Accorder le consentement administrateur**.
+- **Authentification** → *Paramètres avancés* → **Autoriser les flux client
+  publics : Oui**. Sans cela, Microsoft réclame un secret client
+  (`AADSTS7000218`) qu'une inscription de client public n'a pas.
+- **API → Ajouter une autorisation → Microsoft Graph → autorisations
+  DÉLÉGUÉES → `Files.Read`**. Des autorisations *d'application* ne
+  fonctionneraient pas ici.
+- **Ne pas** créer de secret client.
 
 ```ini
 MSFORMS_MODE=graph
-MSFORMS_TENANT_ID=<id de locataire>
-MSFORMS_CLIENT_ID=<id d'application>
-MSFORMS_CLIENT_SECRET=<secret>
-MSFORMS_CLASSEUR=site:monkole.sharepoint.com:/sites/Maintenance:/Documents partages/reponses.xlsx
+MSFORMS_AUTH=delegue
+MSFORMS_TENANT_ID=consumers
+MSFORMS_CLIENT_ID=<ID d'application>
+MSFORMS_CLIENT_SECRET=
+MSFORMS_CLASSEUR=me:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx
 MSFORMS_TABLEAU=Tableau1
 FORMULAIRE_INTERVALLE_MIN=5
 ```
 
-Deux écritures pour `MSFORMS_CLASSEUR` :
+Quatre écritures pour `MSFORMS_CLASSEUR` :
 
 ```
-drive:<driveId>:/Documents/reponses.xlsx
-site:<hôte>:/sites/<nom>:/Documents partages/reponses.xlsx
+me:/Maintenance/reponses.xlsx          OneDrive du compte autorisé
+item:<driveItemId>                     le même, par identifiant
+drive:<driveId>:/chemin.xlsx           un autre OneDrive
+site:<hôte>:/sites/<nom>:/chemin.xlsx  une bibliothèque SharePoint
 ```
 
-Le repère de lecture est la colonne **ID** du tableau, que Forms incrémente.
-Les deux chemins peuvent cohabiter : l'identifiant de réponse sert de clé
-d'unicité, donc une réponse ne donne jamais deux demandes.
+La forme `item:` est la plus sûre : elle survit à un renommage et ne souffre
+ni des accents ni des espaces — dont le nom du classeur de Monkole est
+abondamment pourvu. L'identifiant se relève dans
+[Graph Explorer](https://developer.microsoft.com/graph/graph-explorer) :
 
-### 4. Imprimer les étiquettes
+```
+GET /me/drive/root:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx
+```
+
+#### Autoriser la GMAO, une seule fois
+
+```bash
+docker compose exec api npm run lier-microsoft --workspace=api
+```
+
+La commande affiche un code et une adresse. On ouvre l'adresse dans un
+navigateur — depuis n'importe quel poste —, on se connecte avec le compte
+propriétaire du classeur, on saisit le code. La GMAO reçoit son autorisation
+et vérifie aussitôt qu'elle accède bien au classeur, en listant ses tableaux.
+
+C'est le flux « code d'appareil », prévu pour les machines sans navigateur :
+il évite d'avoir à exposer une adresse de redirection publique, que la GMAO
+n'a pas.
+
+> **Le jeton vit en base, pas dans `.env`.** Microsoft en délivre un nouveau à
+> chaque renouvellement et invalide le précédent. S'il n'était conservé que
+> dans le fichier de configuration, la collecte s'arrêterait au premier
+> redémarrage suivant. La table `integrations_secrets` contient donc un secret
+> en clair : une sauvegarde de la base doit être traitée en conséquence.
+>
+> Le jeton expire après 90 jours sans usage. Une collecte qui tourne toutes
+> les cinq minutes le renouvelle bien avant. Après un long arrêt, relancer
+> `lier-microsoft`.
+
+### 4. Choisir où pointe le QR
+
+Un QR code n'est qu'un pointeur vers une adresse : il ne peut pas envoyer la
+réponse à deux endroits. Ce qu'il décide, c'est seulement quelle page s'ouvre.
+Mais on peut décider **qui** décide :
+
+| | Le QR pointe sur le formulaire | Le QR passe par la GMAO |
+|---|---|---|
+| `FORMULAIRE_BASE_QR` | vide | `https://gmao.monkole.cd` |
+| Ce qu'encode l'étiquette | `forms.cloud.microsoft/r/u4qT?r8f3=REA-0020` | `gmao.monkole.cd/r/REA-0020` |
+| Changer de formulaire | réimprimer et recoller tout le parc | une variable d'environnement |
+| Marche hors du réseau de l'hôpital | oui | non |
+
+La GMAO sert alors d'aiguillage : `/r/<code>` renvoie (302, sans mise en
+cache) vers le formulaire du moment, code d'inventaire pré-rempli. `/r` tout
+court sert le QR générique des couloirs. Chaque scan est journalisé, ce qui
+donne au passage une mesure de l'usage réel des étiquettes.
+
+**À ne choisir que si les téléphones des services savent joindre le serveur.**
+Sur un site isolé où le réseau de l'établissement n'arrive pas — Kimbondo,
+Kinvula, Moluka — le QR doit viser le formulaire directement.
+
+### 5. Imprimer les étiquettes
 
 Page **Équipements** → sélection → **Étiquettes**. Chaque étiquette porte deux
 codes : le code-barres linéaire pour les douchettes du magasin, et le QR pour
-les téléphones des services, qui mène au formulaire pré-rempli.
+les téléphones des services.
 
 Le QR est encodé en correction « M » : sur une étiquette de deux centimètres,
 ce qui décide de la lecture est la taille d'un module, pas la marge de

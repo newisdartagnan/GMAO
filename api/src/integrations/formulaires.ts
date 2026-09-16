@@ -65,7 +65,7 @@ export const CORRESPONDANCE_PAR_DEFAUT: CorrespondanceChamps = {
   // L'ancienneté passe avant l'objet : « Depuis quand le problème
   // existe-t-il ? » contient le mot « problème », qui est un nom accepté pour
   // l'objet, et serait sinon lu comme l'intitulé de la demande.
-  anciennete: ['depuis', 'anciennete', 'duree', 'apparition'],
+  anciennete: ['depuis', 'anciennete', 'duree', 'apparition', 'debut'],
   objet: ['objet', 'probleme', 'panne', 'sujet', 'titre'],
   urgence: ['urgence', 'priorite', 'degreUrgence', 'niveau'],
   impact: ['impact', 'impactPatient', 'consequence'],

@@ -80,12 +80,29 @@ function cleComparaison(nom: string): string {
   return normaliser(nom).replace(/[^a-z0-9]/g, '');
 }
 
+/**
+ * Colonnes et propriétés qui décrivent la réponse plutôt que son contenu.
+ *
+ * Forms en ajoute d'office (« ID », « Heure de début », « Heure de fin »,
+ * « E-mail », « Nom »), et un classeur repris à la main les renomme — le
+ * classeur de Monkole parle d'« Id_formulaire » et de « Date de plainté ».
+ * Les laisser passer pour des réponses ferait lire l'heure de début comme la
+ * date d'apparition du problème.
+ */
 const METADONNEES = new Set([
-  'id', 'responseid', 'submissionid', 'idreponse',
+  'id', 'responseid', 'submissionid', 'idreponse', 'idformulaire',
   'formulaireid', 'formid', 'form_id', 'formulaire',
   'date', 'submitdate', 'heuredefin', 'heurededebut', 'completiontime', 'created_at',
+  'datedeplainte', 'dateplainte', 'datedesoumission', 'datedenvoi', 'horodatage',
+  'email', 'adressedemessagerie', 'nom', 'name',
   'secret', 'jeton', 'token',
 ]);
+
+/** Colonnes qui portent l'horodatage de la réponse, par ordre de préférence. */
+const COLONNES_DATE = [
+  'datedeplainte', 'dateplainte', 'heuredefin', 'submitdate', 'completiontime',
+  'datedesoumission', 'datedenvoi', 'horodatage', 'heurededebut', 'date',
+];
 
 function sansMetadonnees(corps: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -166,21 +183,40 @@ export function normaliserDate(brut: unknown): string | undefined {
 /* ------------------------------------------------------------------ */
 
 export interface OptionsGraph {
+  /**
+   * « delegue » : la GMAO agit au nom d'un compte, avec un jeton de
+   * rafraîchissement obtenu une fois. C'est le seul flux possible avec un
+   * compte Microsoft personnel (outlook.fr, hotmail.com, live.fr).
+   *
+   * « application » : la GMAO s'authentifie seule, sans utilisateur. Réservé
+   * aux comptes professionnels, où un administrateur peut accorder
+   * `Files.Read.All` à l'application.
+   */
+  auth?: 'delegue' | 'application';
+  /** « consumers » pour un compte personnel, l'identifiant du locataire sinon. */
   tenantId: string;
   clientId: string;
-  clientSecret: string;
   /**
-   * Emplacement du classeur des réponses. Deux écritures :
-   *   drive:<driveId>:/Documents/reponses.xlsx
-   *   site:<hostname>:/sites/<nom>:/Documents partages/reponses.xlsx
+   * Facultatif. Une inscription « client public » — celle qu'impose le compte
+   * personnel — n'a pas de secret, et en envoyer un ferait refuser l'échange.
+   */
+  clientSecret?: string;
+  /** Jeton de rafraîchissement, en flux délégué. */
+  refreshToken?: string;
+  /**
+   * Emplacement du classeur des réponses. Quatre écritures, voir
+   * `cheminClasseur`.
    */
   classeur: string;
-  /** Nom du tableau Excel alimenté par le flux. */
+  /** Nom du tableau Excel des réponses. */
   tableau?: string;
   /** Racine de l'API, pour l'éprouver hors ligne. */
   base?: string;
   jetonBase?: string;
 }
+
+/** Portée demandée en flux délégué : lecture seule, et de quoi se renouveler. */
+export const PORTEE_DELEGUEE = 'https://graph.microsoft.com/Files.Read offline_access';
 
 interface Jeton {
   valeur: string;
@@ -190,23 +226,87 @@ interface Jeton {
 let jetonCache: Jeton | null = null;
 
 /**
- * Jeton d'application, obtenu par le flux « client credentials ».
+ * Le jeton de rafraîchissement tourne à chaque échange.
  *
- * Aucun utilisateur n'est impliqué : c'est la GMAO qui s'authentifie, avec
- * l'autorisation `Files.Read.All` accordée une fois par l'administrateur du
- * locataire. Le jeton vaut une heure ; il est gardé jusqu'à une minute avant
- * son terme, pour ne pas rejouer l'échange à chaque tour de collecte.
+ * Microsoft en délivre un nouveau à chaque renouvellement et invalide
+ * l'ancien. Celui du fichier `.env` ne vaut donc que pour le premier échange :
+ * s'il n'était pas conservé ailleurs, la collecte s'arrêterait au premier
+ * redémarrage suivant. L'appelant fournit de quoi le ranger — en pratique, la
+ * base de données.
+ */
+export type EnregistrerRefresh = (jeton: string) => void | Promise<void>;
+
+let enregistrerRefresh: EnregistrerRefresh | null = null;
+
+export function definirEnregistrementRefresh(f: EnregistrerRefresh | null): void {
+  enregistrerRefresh = f;
+}
+
+function messageErreur(donnees: { error?: string; error_description?: string }, statut: number): string {
+  const brut = donnees.error_description?.split(/[\r\n]/)[0] ?? donnees.error ?? 'réponse inexploitable';
+  // Les erreurs d'Entra ID portent un code que la documentation indexe ; le
+  // garder évite une demi-heure de recherche à l'administrateur.
+  if (/AADSTS7000218/.test(brut)) {
+    return (
+      'l’inscription attend un secret client. Dans Entra ID → Authentification, ' +
+      'passez « Autoriser les flux client publics » à Oui — un compte personnel ' +
+      'exige une inscription de type client public, sans secret.'
+    );
+  }
+  if (/AADSTS9002331|AADSTS50194/.test(brut)) {
+    return (
+      'l’inscription n’accepte pas les comptes personnels. Dans Entra ID → ' +
+      'Manifeste, « signInAudience » doit valoir « AzureADandPersonalMicrosoftAccount » ' +
+      'ou « PersonalMicrosoftAccount ».'
+    );
+  }
+  if (/AADSTS70000|invalid_grant/.test(brut)) {
+    return (
+      'le jeton de rafraîchissement n’est plus valable (révoqué, ou plus de ' +
+      '90 jours sans usage). Relancez « npm run lier-microsoft --workspace=api ».'
+    );
+  }
+  return `${brut} (HTTP ${statut})`;
+}
+
+/**
+ * Jeton d'accès, valable une heure.
+ *
+ * Il est gardé en mémoire jusqu'à une minute avant son terme : la collecte
+ * tourne toutes les cinq minutes, rejouer l'échange à chaque tour serait
+ * douze appels inutiles par heure.
  */
 export async function obtenirJeton(options: OptionsGraph): Promise<string> {
   if (jetonCache && jetonCache.expireLe > Date.now() + 60_000) return jetonCache.valeur;
 
   const racine = options.jetonBase ?? 'https://login.microsoftonline.com';
-  const corps = new URLSearchParams({
-    client_id: options.clientId,
-    client_secret: options.clientSecret,
-    scope: 'https://graph.microsoft.com/.default',
-    grant_type: 'client_credentials',
-  });
+  const delegue = (options.auth ?? 'delegue') === 'delegue';
+
+  if (delegue && !options.refreshToken) {
+    throw new Error(
+      'Aucun jeton de rafraîchissement Microsoft. Lancez une fois ' +
+        '« npm run lier-microsoft --workspace=api » pour autoriser la GMAO.',
+    );
+  }
+
+  const corps = new URLSearchParams(
+    delegue
+      ? {
+          client_id: options.clientId,
+          grant_type: 'refresh_token',
+          refresh_token: options.refreshToken!,
+          scope: PORTEE_DELEGUEE,
+        }
+      : {
+          client_id: options.clientId,
+          client_secret: options.clientSecret ?? '',
+          grant_type: 'client_credentials',
+          scope: 'https://graph.microsoft.com/.default',
+        },
+  );
+  // Une inscription de client public n'a pas de secret ; en envoyer un vide
+  // suffit à faire refuser l'échange.
+  if (delegue && options.clientSecret) corps.set('client_secret', options.clientSecret);
 
   const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/token`, {
     method: 'POST',
@@ -217,16 +317,21 @@ export async function obtenirJeton(options: OptionsGraph): Promise<string> {
 
   const donnees = (await reponse.json().catch(() => ({}))) as {
     access_token?: string;
+    refresh_token?: string;
     expires_in?: number;
+    error?: string;
     error_description?: string;
   };
 
   if (!reponse.ok || !donnees.access_token) {
-    throw new Error(
-      `Entra ID a refusé l’authentification (${reponse.status}) : ${
-        donnees.error_description?.split('\n')[0] ?? 'réponse inexploitable'
-      }`,
-    );
+    throw new Error(`Microsoft a refusé l’authentification : ${messageErreur(donnees, reponse.status)}`);
+  }
+
+  // Le nouveau jeton de rafraîchissement remplace l'ancien, immédiatement :
+  // l'ancien vient d'être invalidé côté Microsoft.
+  if (donnees.refresh_token && donnees.refresh_token !== options.refreshToken) {
+    options.refreshToken = donnees.refresh_token;
+    await enregistrerRefresh?.(donnees.refresh_token);
   }
 
   jetonCache = {
@@ -241,26 +346,181 @@ export function oublierJeton(): void {
   jetonCache = null;
 }
 
-/** Chemin Graph du classeur, à partir de l'écriture courte de la configuration. */
+/* ------------------------------------------------------------------ */
+/* Autorisation initiale, par code d'appareil                          */
+/* ------------------------------------------------------------------ */
+
+export interface DemandeAppareil {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+  message?: string;
+}
+
+/**
+ * Premier temps du flux « code d'appareil ».
+ *
+ * Ce flux existe pour les machines sans navigateur — un serveur, justement.
+ * Il évite d'avoir à exposer une adresse de redirection publique, ce que la
+ * GMAO n'a pas.
+ */
+export async function demanderCodeAppareil(options: {
+  tenantId: string;
+  clientId: string;
+  jetonBase?: string;
+}): Promise<DemandeAppareil> {
+  const racine = options.jetonBase ?? 'https://login.microsoftonline.com';
+  const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/devicecode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: options.clientId, scope: PORTEE_DELEGUEE }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const donnees = (await reponse.json().catch(() => ({}))) as DemandeAppareil & {
+    error?: string;
+    error_description?: string;
+  };
+  if (!reponse.ok || !donnees.device_code) {
+    throw new Error(`Microsoft a refusé la demande : ${messageErreur(donnees, reponse.status)}`);
+  }
+  return donnees;
+}
+
+/**
+ * Second temps : attendre que la personne ait saisi le code dans son
+ * navigateur. Microsoft répond « autorisation en attente » tant que ce n'est
+ * pas fait, et impose un rythme d'interrogation qu'il faut respecter.
+ */
+export async function attendreAutorisation(
+  options: { tenantId: string; clientId: string; jetonBase?: string },
+  demande: DemandeAppareil,
+  journaliser: (m: string) => void = () => {},
+): Promise<{ refreshToken: string; accessToken: string }> {
+  const racine = options.jetonBase ?? 'https://login.microsoftonline.com';
+  const limite = Date.now() + demande.expires_in * 1000;
+  let attente = Math.max(1, demande.interval) * 1000;
+
+  while (Date.now() < limite) {
+    await new Promise((r) => setTimeout(r, attente));
+
+    const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: options.clientId,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: demande.device_code,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const donnees = (await reponse.json().catch(() => ({}))) as {
+      access_token?: string;
+      refresh_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+
+    if (donnees.access_token && donnees.refresh_token) {
+      return { refreshToken: donnees.refresh_token, accessToken: donnees.access_token };
+    }
+    if (donnees.error === 'authorization_pending') continue;
+    if (donnees.error === 'slow_down') {
+      attente += 5000;
+      continue;
+    }
+    if (donnees.error === 'authorization_declined') throw new Error('Autorisation refusée dans le navigateur.');
+    if (donnees.error === 'expired_token') break;
+    throw new Error(`Microsoft a refusé l’échange : ${messageErreur(donnees, reponse.status)}`);
+  }
+  journaliser('délai dépassé');
+  throw new Error('Le code a expiré avant d’être saisi. Relancez la commande.');
+}
+
+/* ------------------------------------------------------------------ */
+/* Emplacement du classeur                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Chemin Graph du classeur, à partir de l'écriture courte de la configuration.
+ *
+ *   me:/Maintenance/reponses.xlsx            OneDrive du compte autorisé
+ *   item:<driveItemId>                       le même, désigné par son identifiant
+ *   drive:<driveId>:/chemin.xlsx             un autre OneDrive
+ *   site:<hote>:/sites/<nom>:/chemin.xlsx    une bibliothèque SharePoint
+ *
+ * La forme « item: » est la plus sûre : elle survit à un renommage du fichier
+ * et ne souffre ni des accents ni des espaces, dont le nom du classeur de
+ * Monkole est abondamment pourvu.
+ */
 export function cheminClasseur(classeur: string): string {
+  const item = /^item:(.+)$/.exec(classeur);
+  if (item) return `/me/drive/items/${encodeURIComponent(item[1].trim())}`;
+
+  const moi = /^me:(.+)$/.exec(classeur);
+  if (moi) return `/me/drive/root:${encodeURI(moi[1])}:`;
+
   const drive = /^drive:([^:]+):(.+)$/.exec(classeur);
   if (drive) return `/drives/${drive[1]}/root:${encodeURI(drive[2])}:`;
 
   const site = /^site:([^:]+):([^:]+):(.+)$/.exec(classeur);
   if (site) return `/sites/${site[1]}:${encodeURI(site[2])}:/drive/root:${encodeURI(site[3])}:`;
 
-  // À défaut, un chemin dans le OneDrive de l'application n'a pas de sens en
-  // « client credentials » : on le dit plutôt que d'échouer plus loin sur un
-  // 404 incompréhensible.
   throw new Error(
-    'MSFORMS_CLASSEUR doit commencer par « drive:<driveId>:/chemin » ou ' +
-      '« site:<hote>:/sites/<nom>:/chemin » — voir le README.',
+    'MSFORMS_CLASSEUR doit commencer par « me:/chemin », « item:<id> », ' +
+      '« drive:<driveId>:/chemin » ou « site:<hote>:/sites/<nom>:/chemin » — voir le README.',
   );
 }
 
 interface LigneTableau {
   index: number;
   values: unknown[][];
+}
+
+/** Colonnes du classeur qui portent une réponse, dans l'ordre. */
+export function colonnesReponses(colonnes: string[]): string[] {
+  return colonnes.slice(1).filter((c) => c && !METADONNEES.has(cleComparaison(c)));
+}
+
+/** Colonne qui porte l'horodatage de la réponse, s'il y en a une. */
+export function colonneHorodatage(colonnes: string[]): string | undefined {
+  for (const cible of COLONNES_DATE) {
+    const trouvee = colonnes.find((c) => cleComparaison(c) === cible);
+    if (trouvee) return trouvee;
+  }
+  return undefined;
+}
+
+/**
+ * Une ligne du classeur, ramenée à une soumission.
+ *
+ * La première colonne porte l'identifiant de réponse, quel que soit son
+ * libellé — « ID » dans un classeur laissé tel quel, « Id_formulaire » dans
+ * celui de Monkole. Les autres colonnes de service sont écartées : lire
+ * « Heure de début » comme une réponse la ferait passer pour la date
+ * d'apparition du problème.
+ */
+export function lireLigneClasseur(
+  colonnes: string[],
+  cellules: unknown[],
+  formulaireId: string,
+): SoumissionFormulaire | null {
+  const parColonne = new Map(colonnes.map((c, i) => [c, cellules[i]]));
+  const identifiant = String(parColonne.get(colonnes[0]) ?? '').trim();
+  if (!identifiant) return null;
+
+  const colonneDate = colonneHorodatage(colonnes);
+  return {
+    source: SOURCE,
+    id: identifiant,
+    formulaireId,
+    date: colonneDate ? normaliserDate(parColonne.get(colonneDate)) : undefined,
+    reponses: colonnesReponses(colonnes).map((libelle) => ({
+      libelle,
+      valeur: texteDe(parColonne.get(libelle)),
+    })),
+  };
 }
 
 /**
@@ -297,6 +557,12 @@ export async function recupererSoumissions(
   if (!colonnes.length) {
     throw new Error(`Le tableau « ${tableau} » du classeur n’a pas de ligne d’en-tête.`);
   }
+  if (!colonnesReponses(colonnes).length) {
+    throw new Error(
+      `Le tableau « ${tableau} » ne contient que des colonnes de service : ` +
+        `${colonnes.join(', ')}. Vérifiez MSFORMS_TABLEAU.`,
+    );
+  }
 
   const lignes = (await appeler(`${chemin}/rows`)) as { value?: LigneTableau[] };
   const repere = depuis ? Number(depuis) : Number.NaN;
@@ -305,28 +571,13 @@ export async function recupererSoumissions(
   let maximum = Number.isNaN(repere) ? 0 : repere;
 
   for (const ligne of lignes.value ?? []) {
-    const cellules = ligne.values?.[0] ?? [];
-    const parColonne = new Map(colonnes.map((c, i) => [c, cellules[i]]));
+    const soumission = lireLigneClasseur(colonnes, ligne.values?.[0] ?? [], options.classeur);
+    if (!soumission) continue;
 
-    const identifiant = String(parColonne.get(colonnes[0]) ?? '').trim();
-    if (!identifiant) continue;
-    const numero = Number(identifiant);
+    const numero = Number(soumission.id);
     if (!Number.isNaN(repere) && !Number.isNaN(numero) && numero <= repere) continue;
     if (!Number.isNaN(numero)) maximum = Math.max(maximum, numero);
-
-    soumissions.push({
-      source: SOURCE,
-      id: identifiant,
-      formulaireId: options.classeur,
-      date: normaliserDate(
-        parColonne.get(colonnes.find((c) => /heure de fin|completion|submit/i.test(c)) ?? '') ??
-          parColonne.get(colonnes.find((c) => /heure de d|start/i.test(c)) ?? ''),
-      ),
-      reponses: colonnes.slice(1).map((libelle) => ({
-        libelle,
-        valeur: texteDe(parColonne.get(libelle)),
-      })),
-    });
+    soumissions.push(soumission);
   }
 
   return {
