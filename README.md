@@ -446,59 +446,43 @@ de lui-même chaque réponse dans un classeur Excel sur OneDrive,
 
 #### Inscrire une application
 
-Un compte Microsoft **personnel** (outlook.fr, hotmail.com, live.fr) n'a pas
-de locataire où accorder des autorisations d'application. Le seul flux
-possible est donc le flux **délégué** : la GMAO agit au nom du compte
-propriétaire du classeur, qui l'autorise une fois.
+L'inscription et les données **n'ont pas à être dans le même compte**. Une
+inscription n'est qu'une identité : créez-la dans l'Entra ID de
+l'établissement — elle appartient alors à l'hôpital, et non à une personne —
+même si le formulaire vit dans un compte Microsoft personnel.
 
-Sur [entra.microsoft.com](https://entra.microsoft.com), connecté avec le
-compte qui possède le classeur — **Inscriptions d'applications → Nouvelle
-inscription** :
+Sur [entra.microsoft.com](https://entra.microsoft.com) — **Inscriptions
+d'applications → Nouvelle inscription** :
 
 | Réglage | Valeur |
 |---|---|
 | Nom | `GMAO — lecture des signalements` |
-| Types de comptes | **Comptes Microsoft personnels uniquement** (ou « … et comptes personnels ») |
+| Types de comptes | **Comptes dans un annuaire organisationnel quelconque *et* comptes Microsoft personnels** |
 | URI de redirection | aucune |
 
 Puis, dans l'inscription créée :
 
 - **Authentification** → *Paramètres avancés* → **Autoriser les flux client
-  publics : Oui**. Sans cela, Microsoft réclame un secret client
+  publics : Oui**. Sans cela Microsoft réclame un secret client
   (`AADSTS7000218`) qu'une inscription de client public n'a pas.
 - **API → Ajouter une autorisation → Microsoft Graph → autorisations
-  DÉLÉGUÉES → `Files.Read`**. Des autorisations *d'application* ne
-  fonctionneraient pas ici.
+  DÉLÉGUÉES → `Files.Read`** — ou `Files.Read.All` si le classeur appartient
+  à un autre compte (voir plus bas).
 - **Ne pas** créer de secret client.
 
 ```ini
 MSFORMS_MODE=graph
 MSFORMS_AUTH=delegue
-MSFORMS_TENANT_ID=consumers
+MSFORMS_TENANT_ID=common
 MSFORMS_CLIENT_ID=<ID d'application>
 MSFORMS_CLIENT_SECRET=
-MSFORMS_CLASSEUR=me:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx
-MSFORMS_TABLEAU=Tableau1
 FORMULAIRE_INTERVALLE_MIN=5
 ```
 
-Quatre écritures pour `MSFORMS_CLASSEUR` :
-
-```
-me:/Maintenance/reponses.xlsx          OneDrive du compte autorisé
-item:<driveItemId>                     le même, par identifiant
-drive:<driveId>:/chemin.xlsx           un autre OneDrive
-site:<hôte>:/sites/<nom>:/chemin.xlsx  une bibliothèque SharePoint
-```
-
-La forme `item:` est la plus sûre : elle survit à un renommage et ne souffre
-ni des accents ni des espaces — dont le nom du classeur de Monkole est
-abondamment pourvu. L'identifiant se relève dans
-[Graph Explorer](https://developer.microsoft.com/graph/graph-explorer) :
-
-```
-GET /me/drive/root:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx
-```
+> **`MSFORMS_TENANT_ID` décrit qui se connecte, pas où l'application est
+> inscrite.** Y mettre l'identifiant du locataire de l'hôpital empêche un
+> compte personnel de s'authentifier, alors même que c'est lui qui détient le
+> formulaire. `common` accepte les deux.
 
 #### Autoriser la GMAO, une seule fois
 
@@ -507,13 +491,71 @@ docker compose exec api npm run lier-microsoft --workspace=api
 ```
 
 La commande affiche un code et une adresse. On ouvre l'adresse dans un
-navigateur — depuis n'importe quel poste —, on se connecte avec le compte
-propriétaire du classeur, on saisit le code. La GMAO reçoit son autorisation
-et vérifie aussitôt qu'elle accède bien au classeur, en listant ses tableaux.
+navigateur — depuis n'importe quel poste —, **on se connecte avec le compte
+qui voit le classeur des réponses**, on saisit le code.
 
 C'est le flux « code d'appareil », prévu pour les machines sans navigateur :
-il évite d'avoir à exposer une adresse de redirection publique, que la GMAO
-n'a pas.
+il évite d'exposer une adresse de redirection publique, que la GMAO n'a pas.
+
+#### Quel compte, et quel classeur
+
+Deux montages, selon le compte avec lequel on autorise.
+
+**a) Autoriser avec le compte propriétaire du formulaire.** Le plus simple :
+le classeur est dans son propre OneDrive, rien à partager.
+
+```ini
+MSFORMS_PORTEE=Files.Read
+MSFORMS_CLASSEUR=item:<driveItemId>
+```
+
+**b) Autoriser avec un autre compte** — celui de l'établissement, par
+exemple. Le classeur n'est alors pas dans son OneDrive : le propriétaire doit
+le lui **partager** (lecture seule suffit), et la portée doit couvrir ce que
+les autres lui ont ouvert.
+
+```ini
+MSFORMS_PORTEE=Files.Read.All
+MSFORMS_CLASSEUR=drive:<driveId>:item:<itemId>
+```
+
+Dans les deux cas, **ne saisissez pas le chemin à la main**. Le nom du
+classeur porte des accents, des espaces et des tirets dont la forme exacte se
+devine mal, et un fichier partagé n'a pas de chemin du tout. Après
+l'autorisation :
+
+```bash
+docker compose exec api npm run trouver-classeur --workspace=api
+```
+
+```
+Partagés avec le compte autorisé
+────────────────────────────────
+
+  Formulaire maintenance -- Hôpital Monkole.xlsx
+    de rtm2021@outlook.fr
+    modifié le 2026-09-16 08:30
+    MSFORMS_CLASSEUR=drive:b!aZ12…:item:01ABC…
+```
+
+Il n'y a plus qu'à copier la ligne. `lier-microsoft` affiche la même liste
+quand `MSFORMS_CLASSEUR` n'est pas encore renseigné, ou quand la valeur
+donnée ne mène nulle part.
+
+Cinq écritures sont acceptées :
+
+```
+me:/Maintenance/reponses.xlsx          OneDrive du compte autorisé
+item:<driveItemId>                     le même, par identifiant
+drive:<driveId>:item:<itemId>          un fichier d'un autre compte, partagé
+drive:<driveId>:/chemin.xlsx           un autre OneDrive, par chemin
+site:<hôte>:/sites/<nom>:/chemin.xlsx  une bibliothèque SharePoint
+```
+
+Les formes par identifiant sont les plus sûres : elles survivent à un
+renommage — ce que les systèmes bâtis sur Power Query interdisent souvent
+formellement, les liens entre classeurs se rompant au moindre changement de
+nom.
 
 > **Le jeton vit en base, pas dans `.env`.** Microsoft en délivre un nouveau à
 > chaque renouvellement et invalide le précédent. S'il n'était conservé que

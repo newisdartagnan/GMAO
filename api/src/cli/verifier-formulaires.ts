@@ -403,6 +403,16 @@ verifier(
   '/me/drive/items/01ABCDEF123456',
 );
 verifier(
+  'classeur d’un autre compte, partagé — par identifiants',
+  microsoft.cheminClasseur('drive:b!aZ12-xY:item:01ABCDEF123456'),
+  '/drives/b!aZ12-xY/items/01ABCDEF123456',
+);
+verifier(
+  'la forme partagée passe avant la forme par chemin',
+  microsoft.cheminClasseur('drive:b!aZ12:item:01XYZ').includes('/items/'),
+  true,
+);
+verifier(
   'classeur dans un OneDrive',
   microsoft.cheminClasseur('drive:b!aZ12:/Documents/reponses.xlsx'),
   '/drives/b!aZ12/root:/Documents/reponses.xlsx:',
