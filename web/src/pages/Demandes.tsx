@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Inbox, Plus, QrCode, ShieldQuestion } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Inbox, Link2, Plus, QrCode, ShieldQuestion } from 'lucide-react';
 import { CorpsPage, EnTetePage } from '@/layouts/Application';
 import { Carte } from '@/components/ui/Carte';
 import { Tableau } from '@/components/ui/Tableau';
@@ -16,9 +16,10 @@ import { LienEquipement, LienOT, Localisation, NomUtilisateur } from '@/componen
 import { ModaleCreationOT } from './EquipementDetail';
 import { useGMAO } from '@/data/store';
 import { api } from '@/data/api';
+import type { CandidatSuggere } from '@/data/api';
 import { dateHeure, heuresEcoulees } from '@gmao/partage';
 import { nombre, normaliser } from '@gmao/partage';
-import { PRIORITE, STATUT_DI } from '@gmao/partage';
+import { DOMAINE, PRIORITE, STATUT_DI } from '@gmao/partage';
 import type { DemandeIntervention, PrioriteOT } from '@gmao/partage';
 
 const IMPACT: Record<DemandeIntervention['impactPatient'], { libelle: string; ton: 'neutre' | 'info' | 'attention' | 'danger' }> = {
@@ -223,6 +224,11 @@ export function PageDemandes() {
               ) : (
                 <Badge ton="neutre">reçue par {selection.canal.replace(/_/g, ' ')}</Badge>
               )}
+              {selection.domaineSuggere && (
+                <Badge ton={DOMAINE[selection.domaineSuggere].ton}>
+                  {DOMAINE[selection.domaineSuggere].libelle}
+                </Badge>
+              )}
             </div>
 
             {selection.impactPatient === 'risque_vital' && (
@@ -248,6 +254,13 @@ export function PageDemandes() {
               ]}
             />
 
+            {selection.origineExterne && !selection.equipementId && (
+              <RapprochementEquipement
+                demande={selection}
+                onRattache={(maj) => setSelection(maj)}
+              />
+            )}
+
             {selection.origineExterne && <ReponsesFormulaire origine={selection.origineExterne} />}
           </div>
         )}
@@ -265,6 +278,7 @@ export function PageDemandes() {
           objetInitial={transformation.objet}
           descriptionInitiale={transformation.description}
           prioriteInitiale={transformation.urgenceDeclaree}
+          domaineSuggere={transformation.domaineSuggere}
         />
       )}
 
@@ -288,6 +302,108 @@ export function PageDemandes() {
         }}
       />
     </>
+  );
+}
+
+/**
+ * Rapprochement du signalement avec l'inventaire.
+ *
+ * Le formulaire demande l'équipement en toutes lettres. « Climatiseur » ne
+ * désigne aucune machine en particulier, et exiger un numéro d'inventaire de
+ * quelqu'un qui constate une panne à 3 h du matin ne marcherait pas — il
+ * appellerait, ou ne signalerait rien.
+ *
+ * La GMAO propose donc, et le responsable tranche. Chaque proposition dit
+ * pourquoi elle est là : un rapprochement qu'on ne peut pas vérifier d'un
+ * coup d'œil ne se corrige jamais.
+ */
+function RapprochementEquipement({
+  demande,
+  onRattache,
+}: {
+  demande: DemandeIntervention;
+  onRattache: (maj: DemandeIntervention) => void;
+}) {
+  const { commander, index } = useGMAO();
+  const [candidats, setCandidats] = useState<CandidatSuggere[] | null>(null);
+  const [enCours, setEnCours] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCandidats(null);
+    api
+      .equipementsSuggeres(demande.id)
+      .then((r) => setCandidats(r.candidats))
+      .catch(() => setCandidats([]));
+  }, [demande.id]);
+
+  const rattacher = async (equipementId: string) => {
+    setEnCours(equipementId);
+    try {
+      onRattache(await commander(() => api.rattacherEquipement(demande.id, equipementId)));
+    } finally {
+      setEnCours(null);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-marque-200 bg-marque-50/40">
+      <div className="flex items-start gap-2 px-3 py-2">
+        <Link2 className="mt-0.5 size-4 shrink-0 text-marque-600" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-slate-800">Aucun équipement rattaché</p>
+          <p className="text-xs text-slate-600">
+            {demande.designationLibre
+              ? <>Le demandeur a écrit « {demande.designationLibre} ».</>
+              : <>Le formulaire n’indique pas de quelle machine il s’agit.</>}{' '}
+            Sans rattachement, l’intervention n’entrera pas dans l’historique de l’équipement.
+          </p>
+        </div>
+      </div>
+
+      {candidats === null && (
+        <p className="px-3 pb-2.5 text-xs text-slate-500">Recherche dans l’inventaire…</p>
+      )}
+
+      {candidats?.length === 0 && (
+        <p className="px-3 pb-2.5 text-xs text-slate-500">
+          Rien d’approchant dans l’inventaire. Rattachez la machine depuis sa fiche, ou laissez la demande
+          telle quelle si elle ne concerne pas un équipement inventorié — une fuite dans un couloir, par exemple.
+        </p>
+      )}
+
+      {candidats && candidats.length > 0 && (
+        <p className="px-3 pb-1.5 text-[11px] text-slate-500">
+          {candidats.some((c) => c.raisons.some((r) => r.startsWith('désignation')))
+            ? 'Ce qui porte les mots du demandeur :'
+            : 'Rien ne correspond aux mots employés. Voici ce qui se trouve à l’endroit indiqué :'}
+        </p>
+      )}
+
+      {candidats && candidats.length > 0 && (
+        <ul className="divide-y divide-marque-100 border-t border-marque-100">
+          {candidats.map((c) => (
+            <li key={c.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-slate-800">
+                  <span className="font-mono">{c.code}</span> — {c.designation}
+                </p>
+                <p className="truncate text-[11px] text-slate-500">
+                  {index.locaux.get(c.localId)?.nom ?? '—'} · {c.raisons.join(' · ')}
+                </p>
+              </div>
+              <Bouton
+                taille="sm"
+                variante="discret"
+                disabled={enCours !== null}
+                onClick={() => void rattacher(c.id)}
+              >
+                {enCours === c.id ? 'Rattachement…' : 'Rattacher'}
+              </Bouton>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

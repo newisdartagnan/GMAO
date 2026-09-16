@@ -411,6 +411,18 @@ export interface DemandeIntervention {
   traiteParId?: ID;
   dateTraitement?: ISODate;
   origineExterne?: OrigineExterne;
+  /**
+   * Corps de métier déduit du secteur déclaré sur le formulaire. Il ne décide
+   * de rien : il présélectionne l'équipe au moment de créer l'ordre de
+   * travail, et c'est le responsable qui tranche.
+   */
+  domaineSuggere?: DomaineTechnique;
+  /**
+   * Désignation libre de l'objet en panne, telle que le demandeur l'a écrite
+   * — « climatiseur », « robinet du WC homme ». Conservée à part de la
+   * description : c'est sur elle que s'appuie la recherche d'équipement.
+   */
+  designationLibre?: string;
 }
 
 export interface LigneTemps {

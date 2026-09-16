@@ -57,6 +57,12 @@ export const config = {
      * pré-rempli » — quelque chose comme « r8f3c1e0a… ».
      */
     paramCode: lire('FORMULAIRE_PARAM_CODE', 'equipement'),
+    /**
+     * Adresse publique de la GMAO, si les téléphones des services savent la
+     * joindre. Renseignée, le QR des étiquettes passe par elle : la
+     * destination se change ensuite sans réimprimer une étiquette.
+     */
+    baseQr: lire('FORMULAIRE_BASE_QR', '').replace(/\/+$/, ''),
     /** Correspondance question → champ de la demande, en JSON. */
     champs: lire('FORMULAIRE_CHAMPS', ''),
     /** Secret partagé exigé sur l'appel webhook. Vide = webhook fermé. */
@@ -80,20 +86,46 @@ export const config = {
 
   microsoft: {
     /**
-     * « webhook » : Power Automate appelle la GMAO, qui doit être joignable
-     * depuis Internet. « graph » : la GMAO relit un classeur Excel alimenté
-     * par le flux, sans rien exposer.
+     * Comment la GMAO s'authentifie auprès de Microsoft.
+     *
+     * « delegue » : au nom d'un compte, par jeton de rafraîchissement. C'est
+     * le seul flux possible avec un compte Microsoft personnel — outlook.fr,
+     * hotmail.com, live.fr — qui n'a pas de locataire où déclarer des
+     * autorisations d'application.
+     *
+     * « application » : sans utilisateur, réservé aux comptes professionnels.
      */
-    mode: lire('MSFORMS_MODE', 'webhook'),
-    tenantId: lire('MSFORMS_TENANT_ID', ''),
+    auth: (lire('MSFORMS_AUTH', 'delegue') === 'application' ? 'application' : 'delegue') as
+      | 'delegue'
+      | 'application',
+    /**
+     * « graph » : la GMAO relit le classeur Excel que Forms alimente de
+     * lui-même. C'est la voie par défaut, parce qu'elle ne demande rien
+     * d'autre qu'un accès sortant — ni adresse publique, ni licence.
+     *
+     * « webhook » : une automatisation appelle la GMAO. Plus immédiat, mais
+     * l'action HTTP de Power Automate est un connecteur payant, et le serveur
+     * doit être joignable depuis Internet.
+     */
+    mode: lire('MSFORMS_MODE', 'graph'),
+    /** « consumers » pour un compte personnel, l'identifiant du locataire sinon. */
+    tenantId: lire('MSFORMS_TENANT_ID', 'consumers'),
     clientId: lire('MSFORMS_CLIENT_ID', ''),
+    /** Vide pour une inscription de client public, ce qu'exige un compte personnel. */
     clientSecret: lire('MSFORMS_CLIENT_SECRET', ''),
-    /** drive:<driveId>:/chemin.xlsx ou site:<hote>:/sites/<nom>:/chemin.xlsx */
+    /**
+     * Jeton de rafraîchissement de secours. Le jeton courant vit en base,
+     * parce que Microsoft le remplace à chaque renouvellement ; celui-ci ne
+     * sert qu'à amorcer une installation déjà autorisée ailleurs.
+     */
+    refreshToken: lire('MSFORMS_REFRESH_TOKEN', ''),
+    /** me:/chemin.xlsx, item:<id>, drive:<driveId>:/chemin, site:<hote>:/sites/<nom>:/chemin */
     classeur: lire('MSFORMS_CLASSEUR', ''),
     tableau: lire('MSFORMS_TABLEAU', 'Tableau1'),
     graphBase: lire('MSFORMS_GRAPH_BASE', 'https://graph.microsoft.com/v1.0'),
     jetonBase: lire('MSFORMS_JETON_BASE', 'https://login.microsoftonline.com'),
   },
+
 };
 
 export function verifierConfigProduction(): void {
@@ -120,15 +152,12 @@ export function recuperationActive(): boolean {
     return Boolean(config.jotform.cleApi && config.jotform.formulaireId);
   }
   if (config.formulaire.source === 'microsoft') {
-    return (
-      config.microsoft.mode === 'graph' &&
-      Boolean(
-        config.microsoft.tenantId &&
-          config.microsoft.clientId &&
-          config.microsoft.clientSecret &&
-          config.microsoft.classeur,
-      )
-    );
+    if (config.microsoft.mode !== 'graph') return false;
+    if (!config.microsoft.clientId || !config.microsoft.classeur) return false;
+    // En flux délégué, l'autorisation vit en base : la configuration seule ne
+    // suffit pas à dire si le connecteur peut lire, et `demarrerCollecte` le
+    // vérifiera. En flux application, le secret est exigé tout de suite.
+    return config.microsoft.auth === 'delegue' || Boolean(config.microsoft.clientSecret);
   }
   return false;
 }

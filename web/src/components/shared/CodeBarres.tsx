@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { lienFormulaireExterne } from '@gmao/partage';
+import { lienQrEtiquette } from '@gmao/partage';
+import type { ReglageQR } from '@gmao/partage';
 import { contenuEtiquette, encoderCode128B } from '@/lib/codebarres';
 import { CodeQR } from './CodeQR';
 
@@ -82,9 +83,9 @@ export function EtiquetteInventaire({
   service: string;
   criticite: string;
   /** Formulaire externe de signalement, s'il est branché. */
-  formulaire?: { url: string; champCode: string } | null;
+  formulaire?: ReglageQR | null;
 }) {
-  const lien = formulaire ? lienFormulaireExterne(formulaire.url, formulaire.champCode, code) : null;
+  const lien = formulaire ? lienQrEtiquette(formulaire, code) || null : null;
 
   return (
     <div className="w-[320px] rounded-lg border-2 border-slate-800 bg-white p-3">

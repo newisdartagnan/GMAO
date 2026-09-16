@@ -51,7 +51,12 @@ export function ecrireJeton(jeton: string | null): void {
 
 /** Réglages de déploiement, distincts des données de l'hôpital. */
 export interface ConfigurationClient {
-  formulaireExterne: { url: string; champCode: string } | null;
+  formulaireExterne: {
+    /** Renseignée, le QR passe par la GMAO plutôt que par le formulaire. */
+    baseRedirection: string | null;
+    url: string | null;
+    paramCode: string;
+  } | null;
 }
 
 export interface EtatIntegrations {
@@ -63,11 +68,17 @@ export interface EtatIntegrations {
     webhookOuvert: boolean;
     url: string | null;
     paramCode: string;
+    baseQr: string | null;
     correspondance: Record<string, string[]>;
     /** Ce qui identifie le formulaire côté fournisseur. */
     reference: string | null;
     /** « api » pour JotForm, « graph » ou « webhook » pour Microsoft. */
     mode: string;
+    /** « delegue » ou « application » pour Microsoft. */
+    auth: string | null;
+    /** Le connecteur a-t-il reçu son autorisation ? */
+    autorise: boolean;
+    autoriseLe: string | null;
     etat: {
       derniereLecture: string | null;
       dernierHorodatage: string | null;
@@ -77,6 +88,21 @@ export interface EtatIntegrations {
     demandesRecues: number;
     derniereDemande: string | null;
   };
+}
+
+/** Équipement proposé pour un signalement décrit en toutes lettres. */
+export interface CandidatSuggere {
+  id: string;
+  code: string;
+  designation: string;
+  marque: string;
+  modele: string;
+  criticite: number;
+  serviceId: string;
+  localId: string;
+  score: number;
+  /** Ce qui a valu sa place au candidat, à afficher tel quel. */
+  raisons: string[];
 }
 
 export interface ReponseCommande<T> {
@@ -197,6 +223,10 @@ export const api = {
   refuserDemande: (id: string, motif: string) =>
     poster<ReponseCommande<void>>(`/demandes/${id}/refuser`, { motif }),
   analyserDemande: (id: string) => poster<ReponseCommande<void>>(`/demandes/${id}/analyser`),
+  equipementsSuggeres: (id: string) =>
+    requete<{ candidats: CandidatSuggere[] }>(`/demandes/${id}/equipements-suggeres`),
+  rattacherEquipement: (id: string, equipementId: string | null) =>
+    poster<ReponseCommande<DemandeIntervention>>(`/demandes/${id}/equipement`, { equipementId }),
 
   /* ------------------------ Ordres de travail ------------------------ */
   creerOT: (d: {
