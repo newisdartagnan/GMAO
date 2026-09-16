@@ -97,6 +97,13 @@ case "${source_formulaire:-aucune}" in
       fi
     else
       exiger FORMULAIRE_SECRET_WEBHOOK "secret attendu sur l'appel entrant" 16
+      orange "• MSFORMS_MODE=webhook suppose deux choses :"
+      orange "    — un serveur joignable depuis Internet ;"
+      orange "    — l'action HTTP de Power Automate, qui est un connecteur payant"
+      orange "      et n'existe pas sur un compte Microsoft personnel."
+      orange "  Pour lire le classeur que Forms remplit de lui-même, sans licence"
+      orange "  ni adresse publique : MSFORMS_MODE=graph."
+      avertissements=$((avertissements + 1))
     fi
     conseiller FORMULAIRE_URL "lien du formulaire, encodé dans le QR des étiquettes"
     ;;
