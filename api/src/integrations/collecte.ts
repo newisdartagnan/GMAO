@@ -175,6 +175,35 @@ export async function microsoftAutorise(): Promise<boolean> {
   return Boolean(await jetonRafraichissement());
 }
 
+/**
+ * Tout ce qu'il faut pour parler à Microsoft, en un seul endroit.
+ *
+ * Le passage obligé n'est pas une coquetterie : Microsoft remplace le jeton
+ * de rafraîchissement à chaque échange et invalide le précédent. Un appelant
+ * qui monterait ses options à la main sans brancher l'enregistrement
+ * consommerait le jeton sans ranger le suivant, et la liaison mourrait — ce
+ * qui est arrivé deux fois, dans deux commandes différentes. En le faisant
+ * ici, on ne peut plus l'oublier.
+ */
+export async function optionsMicrosoft(
+  supplement: Partial<microsoft.OptionsGraph> = {},
+): Promise<microsoft.OptionsGraph> {
+  microsoft.definirEnregistrementRefresh((jeton) => ecrireSecret(microsoft.SOURCE, 'refresh_token', jeton));
+  return {
+    auth: config.microsoft.auth,
+    tenantId: config.microsoft.tenantId || 'common',
+    clientId: config.microsoft.clientId,
+    clientSecret: config.microsoft.clientSecret || undefined,
+    refreshToken: await jetonRafraichissement(),
+    portee: config.microsoft.portee,
+    classeur: config.microsoft.classeur,
+    tableau: config.microsoft.tableau,
+    base: config.microsoft.graphBase,
+    jetonBase: config.microsoft.jetonBase,
+    ...supplement,
+  };
+}
+
 async function interroger(depuis?: string) {
   if (config.formulaire.source === 'jotform') {
     return jotform.recupererSoumissions({
@@ -185,25 +214,7 @@ async function interroger(depuis?: string) {
     });
   }
 
-  // Microsoft remplace le jeton de rafraîchissement à chaque renouvellement :
-  // le nouveau est rangé aussitôt, sans quoi la collecte s'arrêterait au
-  // redémarrage suivant.
-  microsoft.definirEnregistrementRefresh((jeton) => ecrireSecret(microsoft.SOURCE, 'refresh_token', jeton));
-
-  return microsoft.recupererSoumissions(
-    {
-      auth: config.microsoft.auth,
-      tenantId: config.microsoft.tenantId,
-      clientId: config.microsoft.clientId,
-      clientSecret: config.microsoft.clientSecret || undefined,
-      refreshToken: await jetonRafraichissement(),
-      classeur: config.microsoft.classeur,
-      tableau: config.microsoft.tableau,
-      base: config.microsoft.graphBase,
-      jetonBase: config.microsoft.jetonBase,
-    },
-    depuis,
-  );
+  return microsoft.recupererSoumissions(await optionsMicrosoft(), depuis);
 }
 
 /**

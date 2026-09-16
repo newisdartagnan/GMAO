@@ -7,9 +7,10 @@ import {
   SOURCE,
   attendreAutorisation,
   cheminClasseur,
-  definirEnregistrementRefresh,
   demanderCodeAppareil,
+  trouverClasseurs,
 } from '../integrations/microsoft.ts';
+import { optionsMicrosoft } from '../integrations/collecte.ts';
 
 /**
  * Autorisation initiale du connecteur Microsoft.
@@ -25,32 +26,37 @@ import {
  * tourner ce jeton à chaque renouvellement.
  */
 
-const manque: string[] = [];
-if (!config.microsoft.clientId) manque.push('MSFORMS_CLIENT_ID');
-if (!config.microsoft.classeur) manque.push('MSFORMS_CLASSEUR');
-if (manque.length) {
-  console.error(`\nÀ renseigner d'abord dans .env : ${manque.join(', ')}\n`);
+if (!config.microsoft.clientId) {
+  console.error("\nÀ renseigner d'abord dans .env : MSFORMS_CLIENT_ID\n");
   process.exit(1);
 }
 
-try {
-  cheminClasseur(config.microsoft.classeur);
-} catch (e) {
-  console.error(`\n${(e as Error).message}\n`);
-  process.exit(1);
+// MSFORMS_CLASSEUR n'est pas exigé ici : on ne peut pas toujours le
+// connaître avant d'être autorisé — le classeur d'un formulaire détenu par
+// un autre compte n'est visible qu'une fois le jeton obtenu. L'autorisation
+// d'abord, « trouver-classeur » ensuite.
+if (config.microsoft.classeur) {
+  try {
+    cheminClasseur(config.microsoft.classeur);
+  } catch (e) {
+    console.error(`\n${(e as Error).message}\n`);
+    process.exit(1);
+  }
 }
 
 await migrer(() => {});
 
 const options = {
-  tenantId: config.microsoft.tenantId || 'consumers',
+  tenantId: config.microsoft.tenantId || 'common',
   clientId: config.microsoft.clientId,
+  portee: config.microsoft.portee,
   jetonBase: config.microsoft.jetonBase,
 };
 
 console.log(`\nInscription  : ${options.clientId}`);
-console.log(`Locataire    : ${options.tenantId}${options.tenantId === 'consumers' ? ' (compte Microsoft personnel)' : ''}`);
-console.log(`Classeur     : ${config.microsoft.classeur}\n`);
+console.log(`Locataire    : ${options.tenantId}${options.tenantId === 'common' ? ' (comptes professionnels et personnels)' : ''}`);
+console.log(`Portée       : ${options.portee}`);
+console.log(`Classeur     : ${config.microsoft.classeur || '(pas encore renseigné)'}\n`);
 
 const dejaLie = await lireSecret(SOURCE, 'refresh_token');
 if (dejaLie) {
@@ -67,7 +73,7 @@ if (dejaLie) {
 // Microsoft remplace le jeton de rafraîchissement à chaque échange et
 // invalide le précédent. Tout ce qui en produit un doit le ranger aussitôt,
 // sinon la liaison est morte avant d'avoir servi.
-definirEnregistrementRefresh((jeton) => ecrireSecret(SOURCE, 'refresh_token', jeton));
+await optionsMicrosoft();
 
 const demande = await demanderCodeAppareil(options);
 
@@ -90,11 +96,38 @@ console.log('\nAutorisation reçue et enregistrée en base.');
 // Le contrôle réutilise le jeton d'accès que l'autorisation vient de rendre,
 // plutôt que d'en demander un nouveau : un échange de rafraîchissement ferait
 // tourner le jeton, et celui qu'on vient d'enregistrer serait déjà périmé.
+if (!config.microsoft.classeur) {
+  // Sans classeur déclaré, on montre ce que le compte peut lire : c'est
+  // précisément ce qu'on ne pouvait pas savoir avant d'être autorisé.
+  console.log('\nClasseurs lisibles par ce compte :');
+  const trouves = await trouverClasseurs(accessToken, config.microsoft.graphBase);
+  if (!trouves.length) {
+    console.log('  aucun classeur Excel visible.');
+    console.log(
+      '\n  Si le formulaire appartient à un autre compte, faites-lui partager\n' +
+        '  le classeur des réponses avec celui-ci — un partage en lecture suffit.\n',
+    );
+  } else {
+    for (const c of trouves) {
+      console.log(`\n  ${c.nom}${c.proprietaire ? ` — de ${c.proprietaire}` : ''}`);
+      console.log(`    MSFORMS_CLASSEUR=${c.reference}`);
+    }
+    console.log('\n  Copiez la bonne ligne dans .env, puis : ./scripts/mettre-a-jour.sh\n');
+  }
+  await pool.end();
+  process.exit(0);
+}
+
+// Éprouver tout de suite : une autorisation qui ne donne pas accès au
+// classeur vaut mieux être découverte ici qu'au premier tour de collecte.
+//
+// Le contrôle réutilise le jeton d'accès que l'autorisation vient de rendre,
+// plutôt que d'en demander un nouveau : un échange de rafraîchissement ferait
+// tourner le jeton, et celui qu'on vient d'enregistrer serait déjà périmé.
 process.stdout.write('Lecture du classeur… ');
 try {
-  const jeton = accessToken;
   const url = `${config.microsoft.graphBase}${cheminClasseur(config.microsoft.classeur)}/workbook/tables`;
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${jeton}` } });
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const corps = (await r.json().catch(() => ({}))) as {
     value?: { name: string }[];
     error?: { message?: string };
@@ -112,7 +145,24 @@ try {
 } catch (e) {
   console.log('échec');
   console.error(`\nLe compte est lié, mais le classeur reste inaccessible :\n  ${(e as Error).message}\n`);
-  console.error('Vérifiez MSFORMS_CLASSEUR, et que le compte autorisé est bien celui qui possède le fichier.\n');
+
+  // Plutôt que de renvoyer à la documentation, montrer ce qui est lisible :
+  // neuf fois sur dix la bonne ligne est dans cette liste.
+  const trouves = await trouverClasseurs(accessToken, config.microsoft.graphBase);
+  if (trouves.length) {
+    console.error('Ce compte voit ces classeurs :');
+    for (const c of trouves) {
+      console.error(`  ${c.nom}${c.proprietaire ? ` — de ${c.proprietaire}` : ''}`);
+      console.error(`    MSFORMS_CLASSEUR=${c.reference}`);
+    }
+    console.error('');
+  } else {
+    console.error(
+      'Ce compte ne voit aucun classeur Excel. Si le formulaire appartient à un\n' +
+        'autre compte, faites-lui partager le classeur des réponses — un partage\n' +
+        'en lecture suffit — ou autorisez la GMAO avec ce compte-là.\n',
+    );
+  }
   await pool.end();
   process.exit(1);
 }

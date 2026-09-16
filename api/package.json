@@ -14,7 +14,8 @@
     "seed": "tsx src/cli/seed.ts",
     "verifier-mapping": "tsx src/cli/verifier-mapping.ts",
     "verifier-formulaires": "tsx src/cli/verifier-formulaires.ts",
-    "lier-microsoft": "tsx src/cli/lier-microsoft.ts"
+    "lier-microsoft": "tsx src/cli/lier-microsoft.ts",
+    "trouver-classeur": "tsx src/cli/trouver-classeur.ts"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.0",

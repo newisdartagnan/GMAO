@@ -203,6 +203,8 @@ export interface OptionsGraph {
   clientSecret?: string;
   /** Jeton de rafraîchissement, en flux délégué. */
   refreshToken?: string;
+  /** « Files.Read », ou « Files.Read.All » pour un classeur partagé. */
+  portee?: string;
   /**
    * Emplacement du classeur des réponses. Quatre écritures, voir
    * `cheminClasseur`.
@@ -215,8 +217,17 @@ export interface OptionsGraph {
   jetonBase?: string;
 }
 
-/** Portée demandée en flux délégué : lecture seule, et de quoi se renouveler. */
-export const PORTEE_DELEGUEE = 'https://graph.microsoft.com/Files.Read offline_access';
+/**
+ * Portée demandée en flux délégué : lecture seule, et de quoi se renouveler.
+ *
+ * `Files.Read` suffit tant que le classeur est dans le OneDrive du compte qui
+ * autorise. S'il appartient à quelqu'un d'autre et a été partagé, il faut
+ * `Files.Read.All` — la lecture de son propre espace ne couvre pas ce que les
+ * autres nous ont ouvert.
+ */
+export function porteeDeleguee(portee = 'Files.Read'): string {
+  return `https://graph.microsoft.com/${portee} offline_access`;
+}
 
 interface Jeton {
   valeur: string;
@@ -295,7 +306,7 @@ export async function obtenirJeton(options: OptionsGraph): Promise<string> {
           client_id: options.clientId,
           grant_type: 'refresh_token',
           refresh_token: options.refreshToken!,
-          scope: PORTEE_DELEGUEE,
+          scope: porteeDeleguee(options.portee),
         }
       : {
           client_id: options.clientId,
@@ -369,13 +380,14 @@ export interface DemandeAppareil {
 export async function demanderCodeAppareil(options: {
   tenantId: string;
   clientId: string;
+  portee?: string;
   jetonBase?: string;
 }): Promise<DemandeAppareil> {
   const racine = options.jetonBase ?? 'https://login.microsoftonline.com';
   const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/devicecode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: options.clientId, scope: PORTEE_DELEGUEE }),
+    body: new URLSearchParams({ client_id: options.clientId, scope: porteeDeleguee(options.portee) }),
     signal: AbortSignal.timeout(20_000),
   });
   const donnees = (await reponse.json().catch(() => ({}))) as DemandeAppareil & {
@@ -447,14 +459,26 @@ export async function attendreAutorisation(
  *
  *   me:/Maintenance/reponses.xlsx            OneDrive du compte autorisé
  *   item:<driveItemId>                       le même, désigné par son identifiant
- *   drive:<driveId>:/chemin.xlsx             un autre OneDrive
+ *   drive:<driveId>:item:<itemId>            un fichier d'un AUTRE compte,
+ *                                            partagé avec celui qui autorise
+ *   drive:<driveId>:/chemin.xlsx             un autre OneDrive, par chemin
  *   site:<hote>:/sites/<nom>:/chemin.xlsx    une bibliothèque SharePoint
  *
- * La forme « item: » est la plus sûre : elle survit à un renommage du fichier
- * et ne souffre ni des accents ni des espaces, dont le nom du classeur de
- * Monkole est abondamment pourvu.
+ * Les formes par identifiant sont les plus sûres : elles survivent à un
+ * renommage et ne souffrent ni des accents ni des espaces, dont le nom du
+ * classeur de Monkole est abondamment pourvu.
+ *
+ * `drive:<driveId>:item:<itemId>` répond au cas où le formulaire appartient à
+ * un compte et la GMAO est autorisée par un autre : un fichier partagé ne vit
+ * pas dans le OneDrive de celui qui le lit, et « me: » ne le trouverait pas.
+ * `npm run trouver-classeur --workspace=api` donne la valeur à coller.
  */
 export function cheminClasseur(classeur: string): string {
+  const partage = /^drive:([^:]+):item:(.+)$/.exec(classeur);
+  if (partage) {
+    return `/drives/${encodeURIComponent(partage[1].trim())}/items/${encodeURIComponent(partage[2].trim())}`;
+  }
+
   const item = /^item:(.+)$/.exec(classeur);
   if (item) return `/me/drive/items/${encodeURIComponent(item[1].trim())}`;
 
@@ -469,8 +493,88 @@ export function cheminClasseur(classeur: string): string {
 
   throw new Error(
     'MSFORMS_CLASSEUR doit commencer par « me:/chemin », « item:<id> », ' +
-      '« drive:<driveId>:/chemin » ou « site:<hote>:/sites/<nom>:/chemin » — voir le README.',
+      '« drive:<driveId>:item:<itemId> », « drive:<driveId>:/chemin » ou ' +
+      '« site:<hote>:/sites/<nom>:/chemin » — voir le README.',
   );
+}
+
+/** Un classeur que le compte autorisé peut lire. */
+export interface ClasseurTrouve {
+  nom: string;
+  /** Valeur à coller dans MSFORMS_CLASSEUR. */
+  reference: string;
+  /** « propre » : dans son OneDrive ; « partage » : celui de quelqu'un d'autre. */
+  provenance: 'propre' | 'partage';
+  proprietaire?: string;
+  modifieLe?: string;
+}
+
+interface ItemDrive {
+  id: string;
+  name?: string;
+  lastModifiedDateTime?: string;
+  parentReference?: { driveId?: string; path?: string };
+  createdBy?: { user?: { displayName?: string; email?: string } };
+  remoteItem?: {
+    id: string;
+    name?: string;
+    lastModifiedDateTime?: string;
+    parentReference?: { driveId?: string };
+    createdBy?: { user?: { displayName?: string; email?: string } };
+  };
+}
+
+/**
+ * Cherche les classeurs lisibles par le compte autorisé.
+ *
+ * Deux endroits, parce qu'un formulaire détenu ailleurs y met son classeur :
+ * le OneDrive du compte lui-même, et ce qui lui a été partagé. Le second est
+ * le cas de Monkole, où le formulaire appartient à un compte et la GMAO est
+ * autorisée par un autre.
+ */
+export async function trouverClasseurs(
+  jeton: string,
+  base = 'https://graph.microsoft.com/v1.0',
+): Promise<ClasseurTrouve[]> {
+  const appeler = async (chemin: string): Promise<ItemDrive[]> => {
+    const r = await fetch(`${base}${chemin}`, {
+      headers: { Authorization: `Bearer ${jeton}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) return [];
+    const corps = (await r.json().catch(() => ({}))) as { value?: ItemDrive[] };
+    return corps.value ?? [];
+  };
+
+  const sortie: ClasseurTrouve[] = [];
+
+  for (const item of await appeler("/me/drive/root/search(q='.xlsx')?$top=50")) {
+    if (!item.name?.toLowerCase().endsWith('.xlsx')) continue;
+    const dossier = item.parentReference?.path?.replace(/^\/drive\/root:/, '') ?? '';
+    sortie.push({
+      nom: `${dossier}/${item.name}`.replace(/\/+/g, '/'),
+      reference: `item:${item.id}`,
+      provenance: 'propre',
+      modifieLe: item.lastModifiedDateTime,
+    });
+  }
+
+  for (const item of await appeler('/me/drive/sharedWithMe')) {
+    const distant = item.remoteItem;
+    const nom = distant?.name ?? item.name ?? '';
+    if (!nom.toLowerCase().endsWith('.xlsx')) continue;
+    const driveId = distant?.parentReference?.driveId;
+    if (!distant?.id || !driveId) continue;
+    sortie.push({
+      nom,
+      reference: `drive:${driveId}:item:${distant.id}`,
+      provenance: 'partage',
+      proprietaire: distant.createdBy?.user?.email ?? distant.createdBy?.user?.displayName,
+      modifieLe: distant.lastModifiedDateTime,
+    });
+  }
+
+  return sortie;
 }
 
 interface LigneTableau {

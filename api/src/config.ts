@@ -119,7 +119,13 @@ export const config = {
      * sert qu'à amorcer une installation déjà autorisée ailleurs.
      */
     refreshToken: lire('MSFORMS_REFRESH_TOKEN', ''),
-    /** me:/chemin.xlsx, item:<id>, drive:<driveId>:/chemin, site:<hote>:/sites/<nom>:/chemin */
+    /**
+     * Portée demandée à Microsoft. « Files.Read » suffit pour lire son propre
+     * OneDrive ; un classeur qu'un autre compte a partagé exige
+     * « Files.Read.All », qui couvre tout ce que la personne peut déjà voir.
+     */
+    portee: lire('MSFORMS_PORTEE', 'Files.Read'),
+    /** me:/chemin.xlsx, item:<id>, drive:<driveId>:item:<itemId>, drive:<driveId>:/chemin, site:… */
     classeur: lire('MSFORMS_CLASSEUR', ''),
     tableau: lire('MSFORMS_TABLEAU', 'Tableau1'),
     graphBase: lire('MSFORMS_GRAPH_BASE', 'https://graph.microsoft.com/v1.0'),
