@@ -80,6 +80,8 @@ case "${source_formulaire:-aucune}" in
       exiger MSFORMS_CLASSEUR "emplacement du classeur des réponses" 3
       case "$(lire MSFORMS_CLASSEUR)" in
         me:*|item:*|drive:*|site:*|'') ;;
+        # Laissé pour mémoire : les quatre formes valides commencent toutes
+        # par un préfixe. Un chemin nu est l'erreur la plus fréquente.
         *) rouge "✘ MSFORMS_CLASSEUR doit commencer par me: / item: / drive: / site:"
            manques=$((manques + 1)) ;;
       esac
@@ -94,6 +96,19 @@ case "${source_formulaire:-aucune}" in
         fi
         orange "• L'autorisation s'obtient à part, une seule fois :"
         orange "    docker compose exec api npm run lier-microsoft --workspace=api"
+      fi
+      if [ -z "$(lire MSFORMS_CLASSEUR)" ]; then
+        orange "• MSFORMS_CLASSEUR se trouve après l'autorisation, sans le saisir :"
+        orange "    docker compose exec api npm run trouver-classeur --workspace=api"
+      fi
+      if [ "$(lire MSFORMS_PORTEE)" = "Files.Read" ] && \
+         case "$(lire MSFORMS_CLASSEUR)" in drive:*:item:*) true ;; *) false ;; esac; then
+        orange "• Le classeur appartient à un autre compte, mais MSFORMS_PORTEE"
+        orange "  vaut Files.Read, qui ne couvre que vos propres fichiers."
+        orange "  Mettez Files.Read.All, puis relancez lier-microsoft."
+        avertissements=$((avertissements + 1))
+      fi
+      if true; then :
       fi
     else
       exiger FORMULAIRE_SECRET_WEBHOOK "secret attendu sur l'appel entrant" 16
