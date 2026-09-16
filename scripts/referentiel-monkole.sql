@@ -129,7 +129,27 @@ UNION ALL SELECT 'bâtiments créés', count(*)::text FROM batiments WHERE id LI
 UNION ALL SELECT 'locaux créés',    count(*)::text FROM locaux    WHERE id LIKE 'loc_mkl_%'
 UNION ALL SELECT 'équipes créées',  count(*)::text FROM equipes   WHERE id LIKE 'eqp_mkl_%';
 
-SELECT * FROM v_coherence WHERE gravite = 'bloquant';
+-- Contrôle de cohérence, s'il est disponible.
+--
+-- La vue arrive avec la migration 004 : sur une pile qui n'a pas encore été
+-- reconstruite après un « git pull », elle manque. L'interroger directement
+-- ferait échouer la transaction et perdre tout le référentiel qu'on vient de
+-- préparer — d'où le détour, qui se contente de le signaler.
+DO $verif$
+DECLARE bloquants integer;
+BEGIN
+  IF to_regclass('public.v_coherence') IS NULL THEN
+    RAISE NOTICE '---';
+    RAISE NOTICE 'Vue v_coherence absente : les migrations du dépôt ne sont pas';
+    RAISE NOTICE 'toutes appliquées. La pile sert une image antérieure au dernier';
+    RAISE NOTICE 'git pull. Lancer ./scripts/mettre-a-jour.sh, puis recommencer.';
+    RAISE NOTICE '---';
+  ELSE
+    EXECUTE 'SELECT count(*) FROM v_coherence WHERE gravite = ''bloquant''' INTO bloquants;
+    RAISE NOTICE 'Contrôles de cohérence bloquants : %', bloquants;
+  END IF;
+END
+$verif$;
 
 -- Remplacer par COMMIT une fois le récapitulatif vérifié.
 ROLLBACK;
