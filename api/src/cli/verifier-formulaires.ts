@@ -1,4 +1,12 @@
-import { construireBaseDemo, lienFormulaireExterne, lienQrEtiquette, lienRedirection } from '@gmao/partage';
+import {
+  construireBaseDemo,
+  deduireDomaine,
+  domaineDuSecteur,
+  lienFormulaireExterne,
+  lienQrEtiquette,
+  lienRedirection,
+  suggererEquipements,
+} from '@gmao/partage';
 import type { BaseGMAO } from '@gmao/partage';
 import {
   CORRESPONDANCE_PAR_DEFAUT,
@@ -347,6 +355,9 @@ console.log('\nClasseur réel de Monkole — colonnes telles qu’elles sont');
       'Équipement indiqué : prise murale oxygène',
   );
   verifier('horodatage repris sur la demande', r?.demande?.dateCreation, '2026-08-26T07:12:00');
+  verifier('corps de métier déduit du secteur', r?.demande?.domaineSuggere, 'fluides_medicaux');
+  verifier('désignation libre conservée à part', r?.demande?.designationLibre, 'prise murale oxygène');
+  verifier('aucun équipement rattaché d’office', r?.demande?.equipementId, undefined);
 }
 
 {
@@ -409,6 +420,91 @@ verifier(
     refus = e instanceof Error ? e.message.slice(0, 26) : '';
   }
   verifier('écriture non reconnue refusée tôt', refus, 'MSFORMS_CLASSEUR doit comm');
+}
+
+/* ================================================================== */
+console.log('\nSecteur du formulaire → corps de métier');
+
+for (const [secteur, attendu] of [
+  ['Plomberie', 'technique_batiment'],
+  ['Électricité', 'technique_batiment'],
+  ['Climatisation', 'technique_batiment'],
+  ['Gaz Médicaux', 'fluides_medicaux'],
+  ['Biomédical', 'biomedical'],
+  ['Menuiserie', 'technique_batiment'],
+  ['Maçonnerie', 'technique_batiment'],
+  ['It/réseau', 'informatique'],
+  ['Autres', undefined],
+] as const) {
+  verifier(`« ${secteur} »`, domaineDuSecteur(secteur), attendu);
+}
+
+{
+  // « Autres » est le choix de qui ne sait pas où se ranger : les mots de la
+  // demande doivent alors prendre le relais.
+  verifier(
+    '« Autres » + « robinet qui fuit » → bâtiment',
+    deduireDomaine({ secteur: 'Autres', designation: 'robinet', description: 'fuite sous le lavabo' }),
+    'technique_batiment',
+  );
+  verifier(
+    '« Autres » + « respirateur » → biomédical',
+    deduireDomaine({ secteur: 'Autres', designation: 'respirateur' }),
+    'biomedical',
+  );
+  verifier(
+    '« Autres » + « prise murale oxygène » → fluides',
+    deduireDomaine({ secteur: 'Autres', designation: 'prise murale oxygène' }),
+    'fluides_medicaux',
+  );
+  verifier('rien à déduire de rien', deduireDomaine({ secteur: 'Autres' }), undefined);
+  verifier('secteur absent, description parlante', deduireDomaine({ description: 'extincteur vide' }), 'securite_incendie');
+}
+
+/* ================================================================== */
+console.log('\nRapprochement avec l’inventaire');
+
+{
+  const climatiseur = base.equipements.find((e) => /climatiseur/i.test(e.designation))!;
+  const r = suggererEquipements(base, { designation: 'climatiseur', domaine: 'technique_batiment' });
+  verifier('« climatiseur » ramène des climatiseurs', r.length > 0 && /climatiseur/i.test(r[0].equipement.designation), true);
+  verifier('la raison est lisible', r[0]?.raisons.some((x) => x.startsWith('désignation')), true);
+  verifier('au plus cinq propositions', r.length <= 5, true);
+
+  // Le local déclaré doit faire remonter la bonne machine en tête.
+  const local = base.locaux.find((l) => l.id === climatiseur.localId)!;
+  const cible = suggererEquipements(base, { designation: 'climatiseur', localId: local.id });
+  verifier('le local déclaré fait remonter la machine du local', cible[0]?.equipement.localId, local.id);
+}
+
+{
+  // Un mot qui ne correspond à rien ne doit pas ramener le contenu du local.
+  const local = base.locaux[0];
+  const r = suggererEquipements(base, { designation: 'poignée de porte', localId: local.id });
+  verifier('une désignation sans écho ne ramène rien du local', r.every((c) => c.score >= 20), true);
+}
+
+{
+  // Sans désignation du tout, le lieu seul sert de repli.
+  const local = base.locaux.find((l) => base.equipements.some((e) => e.localId === l.id))!;
+  const r = suggererEquipements(base, { localId: local.id });
+  verifier('sans désignation, le local sert de repli', r.length > 0, true);
+  verifier('et tout vient bien du local', r.every((c) => c.equipement.localId === local.id), true);
+}
+
+verifier('aucun critère, aucune proposition', suggererEquipements(base, {}), []);
+
+{
+  // Un équipement réformé ne doit jamais être proposé.
+  const copie = structuredClone(base) as BaseGMAO;
+  const cible = copie.equipements.find((e) => /respirateur/i.test(e.designation))!;
+  copie.equipements = copie.equipements.filter((e) => !/respirateur/i.test(e.designation) || e.id === cible.id);
+  cible.statut = 'reforme';
+  verifier(
+    'un équipement réformé n’est pas proposé',
+    suggererEquipements(copie, { designation: 'respirateur' }).some((c) => c.equipement.id === cible.id),
+    false,
+  );
 }
 
 /* ================================================================== */

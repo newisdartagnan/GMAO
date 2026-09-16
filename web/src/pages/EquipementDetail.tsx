@@ -56,7 +56,7 @@ import { prochaineEcheanceControle, prochaineEcheanceGamme, seuilCompteurSuivant
 import { aujourdHui, dateCourte, dateHeure, echeanceRelative, iso, joursRestants, libellePeriodicite } from '@gmao/partage';
 import { duree, heures, montant, nombre, pourcent } from '@gmao/partage';
 import { CAUSE_PANNE, CRITICITE, DOMAINE, REFERENTIEL, STATUT_EQUIPEMENT } from '@gmao/partage';
-import type { OrdreTravail, StatutEquipement } from '@gmao/partage';
+import type { DomaineTechnique, OrdreTravail, StatutEquipement } from '@gmao/partage';
 
 export function PageEquipementDetail() {
   const { id } = useParams();
@@ -777,6 +777,7 @@ export function ModaleCreationOT({
   objetInitial,
   descriptionInitiale,
   prioriteInitiale,
+  domaineSuggere,
 }: {
   ouverte: boolean;
   onFermer: () => void;
@@ -785,10 +786,17 @@ export function ModaleCreationOT({
   objetInitial?: string;
   descriptionInitiale?: string;
   prioriteInitiale?: OrdreTravail['priorite'];
+  /** Corps de métier déduit du secteur déclaré, qui présélectionne l'équipe. */
+  domaineSuggere?: DomaineTechnique;
 }) {
   const { base, index, commander } = useGMAO();
   const naviguer = useNavigate();
   const eq = equipementId ? index.equipements.get(equipementId) : undefined;
+
+  // Le domaine de l'équipement l'emporte sur le secteur déclaré : le
+  // demandeur dit ce qu'il croit, l'inventaire dit ce qui est.
+  const domaine = eq?.domaine ?? domaineSuggere;
+  const equipeProposee = domaine ? base.equipes.find((q) => q.domaine === domaine) : undefined;
 
   const [f, setF] = useState({
     type: 'correctif' as OrdreTravail['type'],
@@ -796,12 +804,21 @@ export function ModaleCreationOT({
     description: descriptionInitiale ?? '',
     priorite: prioriteInitiale ?? (eq?.criticite === 1 ? 'P1' : 'P3') as OrdreTravail['priorite'],
     datePlanifiee: iso(aujourdHui()),
+    equipeId: equipeProposee?.id ?? '',
     technicienId: '',
     execution: 'interne' as 'interne' | 'prestataire',
     prestataireId: '',
   });
 
-  const techniciens = base.utilisateurs.filter((u) => u.actif && (u.role === 'technicien' || u.role.startsWith('responsable')));
+  const techniciens = base.utilisateurs.filter(
+    (u) =>
+      u.actif &&
+      (u.role === 'technicien' || u.role.startsWith('responsable')) &&
+      // Une équipe retenue restreint la liste : proposer les quarante agents
+      // de l'établissement quand on sait déjà qui s'en occupe fait perdre
+      // plus de temps que ça n'en fait gagner.
+      (!f.equipeId || u.equipeId === f.equipeId),
+  );
 
   return (
     <Modale
@@ -824,6 +841,7 @@ export function ModaleCreationOT({
                   equipementId,
                   priorite: f.priorite,
                   datePlanifiee: f.datePlanifiee,
+                  equipeId: f.equipeId || undefined,
                   technicienPrincipalId: f.technicienId || undefined,
                   execution: f.execution,
                   prestataireId: f.execution === 'prestataire' ? f.prestataireId || undefined : undefined,
@@ -874,6 +892,23 @@ export function ModaleCreationOT({
         </Champ>
         <Champ label="Date planifiée">
           <Saisie type="date" value={f.datePlanifiee} onChange={(e) => setF((x) => ({ ...x, datePlanifiee: e.target.value }))} />
+        </Champ>
+        <Champ
+          label="Équipe"
+          aide={
+            equipeProposee && !eq
+              ? `Proposée d’après le secteur déclaré (${DOMAINE[domaine!].libelle})`
+              : undefined
+          }
+        >
+          <Liste
+            value={f.equipeId}
+            onChange={(e) => setF((x) => ({ ...x, equipeId: e.target.value, technicienId: '' }))}
+            options={[
+              { valeur: '', libelle: 'À décider' },
+              ...base.equipes.map((q) => ({ valeur: q.id, libelle: `${q.nom} — ${DOMAINE[q.domaine].libelle}` })),
+            ]}
+          />
         </Champ>
         <Champ label="Exécution">
           <Liste

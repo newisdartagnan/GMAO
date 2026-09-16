@@ -90,6 +90,21 @@ export interface EtatIntegrations {
   };
 }
 
+/** Équipement proposé pour un signalement décrit en toutes lettres. */
+export interface CandidatSuggere {
+  id: string;
+  code: string;
+  designation: string;
+  marque: string;
+  modele: string;
+  criticite: number;
+  serviceId: string;
+  localId: string;
+  score: number;
+  /** Ce qui a valu sa place au candidat, à afficher tel quel. */
+  raisons: string[];
+}
+
 export interface ReponseCommande<T> {
   resultat: T;
   patch: PatchBase;
@@ -208,6 +223,10 @@ export const api = {
   refuserDemande: (id: string, motif: string) =>
     poster<ReponseCommande<void>>(`/demandes/${id}/refuser`, { motif }),
   analyserDemande: (id: string) => poster<ReponseCommande<void>>(`/demandes/${id}/analyser`),
+  equipementsSuggeres: (id: string) =>
+    requete<{ candidats: CandidatSuggere[] }>(`/demandes/${id}/equipements-suggeres`),
+  rattacherEquipement: (id: string, equipementId: string | null) =>
+    poster<ReponseCommande<DemandeIntervention>>(`/demandes/${id}/equipement`, { equipementId }),
 
   /* ------------------------ Ordres de travail ------------------------ */
   creerOT: (d: {
