@@ -50,6 +50,33 @@ près de mille équipements, vingt mois d'historique d'interventions. Pour parti
 d'une base vierge, mettre `SEED_AU_DEMARRAGE=false` avant le premier
 lancement : il ne restera qu'à créer les comptes d'accès.
 
+### Après un `git pull`
+
+```bash
+./scripts/mettre-a-jour.sh
+```
+
+**`docker compose up -d` ne suffit pas.** Compose constate que les conteneurs
+tournent et ne fait rien : le code fraîchement récupéré reste sur le disque
+sans jamais entrer dans la pile, et l'application continue de servir
+l'ancienne version — sans le dire. Les symptômes trompent :
+
+| Ce qu'on voit | Ce que c'est |
+|---|---|
+| `ERROR: relation "v_coherence" does not exist` | une migration du dépôt n'est pas dans l'image servie |
+| `npm error Missing script: "lier-microsoft"` | idem, le `package.json` du conteneur est l'ancien |
+| une correction poussée qui ne change rien à l'écran | idem |
+
+Le script reconstruit, redémarre, puis **vérifie** que les migrations du
+dépôt sont bien celles qu'a la base — c'est ce contrôle qui distingue une
+pile à jour d'une pile qui en a l'air.
+
+À la main, si besoin :
+
+```bash
+docker compose build api web && docker compose up -d
+```
+
 ### Si un port est déjà pris
 
 La pile publie quatre ports sur le serveur. Si l'un d'eux est occupé, Docker

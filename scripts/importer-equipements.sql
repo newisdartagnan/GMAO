@@ -29,6 +29,17 @@
 
 BEGIN;
 
+-- Ce script s'appuie sur « est_date_iso », apportée par la migration 004.
+-- Sur une pile qui n'a pas été reconstruite depuis le dernier git pull, elle
+-- manque : autant le dire ici plutôt que d'échouer au milieu de l'insertion.
+DO $prealable$
+BEGIN
+  IF to_regprocedure('public.est_date_iso(text)') IS NULL THEN
+    RAISE EXCEPTION 'Migrations incomplètes : la fonction est_date_iso manque. Lancez ./scripts/mettre-a-jour.sh, puis recommencez.';
+  END IF;
+END
+$prealable$;
+
 DROP TABLE IF EXISTS import_equipements;
 
 CREATE TEMP TABLE import_equipements (
