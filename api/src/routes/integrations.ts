@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { lienFormulaireExterne } from '@gmao/partage';
+import { lienFormulaireExterne, lienQrEtiquette } from '@gmao/partage';
 import { exiger } from '../auth.ts';
 import { ErreurMetier, valider } from './aide.ts';
 import { config, formulaireBranche, recuperationActive } from '../config.ts';
@@ -8,7 +8,14 @@ import { chargerCorrespondance } from '../integrations/formulaires.ts';
 import type { SoumissionFormulaire } from '../integrations/formulaires.ts';
 import * as jotform from '../integrations/jotform.ts';
 import * as microsoft from '../integrations/microsoft.ts';
-import { importerWebhook, lireEtatIntegration, sourceActive, synchroniser } from '../integrations/collecte.ts';
+import {
+  importerWebhook,
+  lireEtatIntegration,
+  microsoftAutorise,
+  sourceActive,
+  synchroniser,
+} from '../integrations/collecte.ts';
+import { dateSecret } from '../integrations/secrets.ts';
 import { lireBase } from '../etat.ts';
 
 /**
@@ -20,6 +27,15 @@ import { lireBase } from '../etat.ts';
  * lieu de mot de passe ; tant qu'il n'est pas configuré, la route refuse tout
  * plutôt que d'accepter n'importe qui.
  */
+/** Ce qu'encode le QR des étiquettes, tel que l'interface doit le connaître. */
+function reglageQr() {
+  return {
+    baseRedirection: config.formulaire.baseQr || null,
+    url: config.formulaire.url || null,
+    paramCode: config.formulaire.paramCode,
+  };
+}
+
 export async function routesIntegrations(app: FastifyInstance): Promise<void> {
   /* ---------------- Webhook ---------------- */
 
@@ -74,6 +90,47 @@ export async function routesIntegrations(app: FastifyInstance): Promise<void> {
   /** Ancienne adresse, conservée pour les webhooks JotForm déjà déclarés. */
   app.post('/api/integrations/jotform/:secret', traiterWebhook);
 
+  /* ---------------- Redirection du QR code ---------------- */
+
+  /**
+   * Point d'entrée des QR codes : renvoie vers le formulaire du moment.
+   *
+   * Un QR code n'est qu'un pointeur vers une adresse. Le faire pointer sur le
+   * formulaire directement fige ce choix dans l'autocollant : changer de
+   * fournisseur, corriger une URL, ou passer un jour à un formulaire interne
+   * obligerait à réimprimer et recoller tout le parc. En le faisant pointer
+   * ici, la destination se change par une variable d'environnement.
+   *
+   * La contrepartie est à connaître : le téléphone qui scanne doit pouvoir
+   * joindre la GMAO. Sur le réseau de l'établissement, oui ; sur un site isolé
+   * sans couverture, non — là, le QR doit viser le formulaire directement.
+   *
+   * Aucune authentification : c'est un aiguillage public, qui ne révèle que
+   * l'adresse d'un formulaire déjà destinée à être affichée dans les couloirs.
+   */
+  const rediriger = async (requete: FastifyRequest, reponse: FastifyReply) => {
+    const { code } = requete.params as { code?: string };
+    if (!config.formulaire.url) {
+      return reponse.code(503).type('text/plain; charset=utf-8').send(
+        'Aucun formulaire de signalement n’est configuré sur ce serveur.\n' +
+          'Prévenez le service technique.',
+      );
+    }
+
+    const destination = code
+      ? lienFormulaireExterne(config.formulaire.url, config.formulaire.paramCode, code)
+      : config.formulaire.url;
+
+    requete.log.info({ code: code ?? '(générique)', ip: requete.ip }, 'QR de signalement scanné');
+    // 302 et non 301 : un navigateur qui garde une redirection permanente en
+    // cache continuerait d'ouvrir l'ancienne destination après un changement,
+    // ce qui retirerait tout l'intérêt de passer par ici.
+    return reponse.code(302).header('Cache-Control', 'no-store').redirect(destination);
+  };
+
+  app.get('/r/:code', rediriger);
+  app.get('/r', rediriger);
+
   /* ---------------- Pilotage ---------------- */
 
   app.get('/api/integrations', { preHandler: exiger('administrer') }, async (_requete, reponse) => {
@@ -90,6 +147,7 @@ export async function routesIntegrations(app: FastifyInstance): Promise<void> {
         webhookOuvert: Boolean(config.formulaire.secretWebhook),
         url: config.formulaire.url || null,
         paramCode: config.formulaire.paramCode,
+        baseQr: config.formulaire.baseQr || null,
         correspondance: chargerCorrespondance(config.formulaire.champs || undefined),
         // Ce qui identifie le formulaire côté fournisseur, sans jamais
         // renvoyer de secret : cette route est lisible par tout profil
@@ -98,9 +156,13 @@ export async function routesIntegrations(app: FastifyInstance): Promise<void> {
           config.formulaire.source === 'microsoft'
             ? config.microsoft.mode === 'graph'
               ? config.microsoft.classeur || null
-              : 'Power Automate → webhook'
+              : 'appel entrant'
             : config.jotform.formulaireId || null,
         mode: config.formulaire.source === 'microsoft' ? config.microsoft.mode : 'api',
+        auth: config.formulaire.source === 'microsoft' ? config.microsoft.auth : null,
+        // Le jeton lui-même ne sort jamais d'ici ; seule sa présence est dite.
+        autorise: config.formulaire.source === 'microsoft' ? await microsoftAutorise() : true,
+        autoriseLe: config.formulaire.source === 'microsoft' ? await dateSecret(microsoft.SOURCE) : null,
         etat: await lireEtatIntegration(),
         demandesRecues: externes.length,
         derniereDemande: externes[0]?.numero ?? null,
@@ -124,12 +186,10 @@ export async function routesIntegrations(app: FastifyInstance): Promise<void> {
    */
   app.get('/api/integrations/lien/:code', { preHandler: exiger('lire') }, async (requete, reponse) => {
     const { code } = requete.params as { code: string };
-    if (!config.formulaire.url) {
+    if (!config.formulaire.url && !config.formulaire.baseQr) {
       throw new ErreurMetier('Aucune URL de formulaire configurée (FORMULAIRE_URL).', 409);
     }
-    return reponse.send({
-      lien: lienFormulaireExterne(config.formulaire.url, config.formulaire.paramCode, code),
-    });
+    return reponse.send({ lien: lienQrEtiquette(reglageQr(), code) });
   });
 
   /**
@@ -138,9 +198,7 @@ export async function routesIntegrations(app: FastifyInstance): Promise<void> {
    */
   app.get('/api/configuration', { preHandler: exiger('lire') }, async (_requete, reponse) =>
     reponse.send({
-      formulaireExterne: config.formulaire.url
-        ? { url: config.formulaire.url, champCode: config.formulaire.paramCode }
-        : null,
+      formulaireExterne: config.formulaire.url || config.formulaire.baseQr ? reglageQr() : null,
     }),
   );
 }

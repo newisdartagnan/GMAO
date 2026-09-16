@@ -295,169 +295,229 @@ il n'a pas de compte, et il a autre chose à faire. Il a un téléphone. Le
 formulaire qu'il remplit devient une demande d'intervention, dans la file du
 service technique.
 
-Deux fournisseurs sont pris en charge : **Microsoft Forms** (via Power
-Automate) et **JotForm**.
+Deux fournisseurs sont pris en charge : **Microsoft Forms** et **JotForm**.
 
-### Faut-il un QR par équipement, ou un seul QR pour tout ?
+### Rien à changer au formulaire ni au QR
 
-Les deux, et ce n'est pas un compromis : ils ne servent pas la même chose.
+Le formulaire en service et le QR code déjà distribué restent **tels quels**.
+Les treize techniciens et le chef de service continuent de travailler comme
+avant ; la GMAO se branche en lecture, derrière.
 
-| | QR générique | QR par équipement |
-|---|---|---|
-| Où | Affiches de couloir, tableaux de service, arbre de canvas | Étiquette collée sur la machine |
-| Pour quoi | Plomberie, maçonnerie, menuiserie, un éclairage de circulation — tout ce qui n'a pas de numéro d'inventaire | Les équipements inventoriés : biomédical, groupes, climatisation, compresseurs |
-| Ce que le demandeur saisit | Bâtiment, salle, désignation | Rien de tout cela : le code est déjà là |
-| Ce que la GMAO en fait | Une demande rattachée à un lieu | Une demande **rattachée à la machine** |
+```
+  QR existant  →  formulaire Microsoft  →  classeur Excel  →  GMAO
+  (inchangé)      (inchangé)              (rempli par         demande
+                                           Forms, nativement)  d'intervention
+```
 
-Le QR générique reste indispensable : une fuite dans un WC n'a pas de numéro
-d'inventaire, et une étiquette peut être décollée ou illisible.
+Ce que cela implique, dit franchement : **le formulaire ne demande pas de
+numéro d'inventaire**, donc une demande n'arrive rattachée à aucune machine.
+Or l'historique par machine est ce qui fait la valeur d'une GMAO — le coût
+cumulé d'un climatiseur, son taux de panne, la décision de le remplacer
+plutôt que de le réparer une cinquième fois.
 
-Mais tout ce qui est à l'inventaire mérite son propre QR, pour une raison qui
-est la raison d'être d'une GMAO : **sans code, la demande ne s'attache à
-aucune machine.** Or c'est l'historique par machine qui fait tout le reste —
-le coût cumulé d'un climatiseur, son taux de panne, la décision de le
-remplacer plutôt que de le réparer une cinquième fois, le déclenchement d'une
-maintenance préventive. Une demande « climatiseur, MKL3, cuisine » est un
-ticket ; « CLI-0142 » est une donnée de maintenance.
+Plutôt que d'exiger un code que personne n'ira chercher à 3 h du matin, la
+GMAO **propose** :
 
-Accessoirement, cela retire trois questions au demandeur — bâtiment, salle,
-équipement — et supprime l'ambiguïté : il y a quarante climatiseurs à
-Monkole, et « le climatiseur de la cuisine » ne dit pas lequel.
-
-**Le même formulaire sert les deux.** Il suffit de lui ajouter une question
-qui reçoit le code, laissée vide quand on arrive par le QR générique.
-
-### 1. Préparer le formulaire
-
-Le formulaire de signalement en service convient tel quel. Une seule
-modification est nécessaire pour les QR par équipement : ajouter une question
-
-> **Code inventaire** *(rempli automatiquement — ne pas modifier)*
-
-en texte court, non obligatoire, placée en tête.
-
-Les questions sont reconnues **par leur libellé**, mot à mot. Celles du
-formulaire de Monkole le sont déjà :
-
-| Question du formulaire | Ce qu'elle alimente |
+| Ce que le formulaire donne | Ce que la GMAO en fait |
 |---|---|
-| Code inventaire | l'équipement, retrouvé à l'inventaire |
-| Nom et contact du demandeur | le déclarant |
-| Depuis quand le problème existe-t-il ? | l'ancienneté, reportée dans la demande |
-| Secteur | le corps de métier, reporté dans la demande |
-| Lieu (bâtiment / service) | le site ou le bâtiment |
-| Salle de lieux | le local |
-| Équipement / Installation concernée | la désignation libre de l'objet en panne |
-| Description du problème | la description, et l'objet en est tiré |
-| Priorité | la priorité : Haute → P1, Moyenne → P3, Basse → P4 |
+| `Secteur` = « Gaz Médicaux » | corps de métier → présélectionne l'équipe sur l'ordre de travail |
+| `Lieu` = « MKL2 » | rattache la demande au bon service |
+| `Salle de lieu` = « Bloc opératoire » | rattache au local s'il existe, sinon reste en clair |
+| `Équipement` = « prise murale oxygène » | cherche dans l'inventaire et propose les candidats |
+| `Priorité` = « Haute » | P1, avec risque patient |
+| `Date de plainté` | l'heure réelle du signalement |
 
-L'onglet **Paramètres → Formulaire externe** affiche les noms acceptés pour
-chaque case. Si un libellé change, `FORMULAIRE_CHAMPS` le raccorde sans
-toucher au code :
+Dans le panneau de la demande, un bloc « Aucun équipement rattaché » liste
+les machines qui peuvent correspondre, **avec la raison de chaque
+proposition** — les mots employés, le local, le corps de métier. Un clic sur
+« Rattacher » et l'intervention entre dans l'historique de la bonne machine.
+
+Rien n'est rattaché automatiquement. Un rapprochement qui se trompe en
+silence coûte plus cher que pas de rapprochement du tout : c'est pourquoi la
+GMAO propose et le responsable tranche.
+
+> **Plus tard, si vous le souhaitez.** Ajouter au formulaire une question
+> « Code inventaire » et coller un QR par équipement supprimerait cette étape
+> — la demande arriverait déjà rattachée. Ce n'est pas nécessaire pour que la
+> chaîne fonctionne, et cela perturberait l'existant. Le connecteur reconnaît
+> la question si elle apparaît un jour, sans autre réglage.
+
+### Le référentiel des vingt lieux
+
+Pour que `Lieu` et `Secteur` se rattachent, les vingt lieux du formulaire et
+les neuf secteurs doivent exister dans la GMAO. Un script les crée :
+
+```bash
+docker compose exec -T db psql -U gmao gmao < scripts/referentiel-monkole.sql
+```
+
+Il s'exécute d'abord en lecture — `ROLLBACK` à la fin — et affiche ce qu'il
+créerait. Quand le récapitulatif convient, remplacer `ROLLBACK` par `COMMIT`
+et réexécuter. Le script est rejouable : ce qui existe déjà n'est pas touché.
+
+C'est un point de départ. Les lieux sont créés à plat, un service et un
+bâtiment chacun, parce que la liste du formulaire ne dit pas lesquels sont
+des sites distincts et lesquels sont des bâtiments du campus. À réorganiser
+depuis pgAdmin une fois la structure réelle arrêtée.
+
+Sans ce référentiel, tout fonctionne quand même : les demandes arrivent, avec
+le lieu en clair dans leur description, et reviennent au service du compte de
+service.
+
+### 1. Ce que la GMAO lit dans le classeur
+
+Les colonnes sont reconnues **par leur libellé**, mot à mot. Celles du
+classeur en service le sont déjà, sans rien y changer :
+
+| Colonne du classeur | Ce qu'elle alimente |
+|---|---|
+| `Id_formulaire` | l'identifiant de réponse, et le repère de lecture |
+| `Date de plainté` | l'horodatage de la demande |
+| `Nom du demandeur` | le déclarant |
+| `Date de dèbut du probleme` | l'ancienneté, reportée dans la demande |
+| `Secteur` | le corps de métier, qui présélectionne l'équipe |
+| `Lieu` | le service, parmi les vingt lieux |
+| `Salle de lieu` | le local, s'il existe à l'inventaire |
+| `Équipement` | la désignation libre, qui sert à proposer des machines |
+| `Description du problème` | la description, et l'objet en est tiré |
+| `Priorité` | la priorité : Haute → P1, Moyenne → P3, Basse → P4 |
+
+La première colonne porte l'identifiant, quel que soit son libellé. Les
+colonnes de service que Forms ajoute — `ID`, `Heure de début`, `Heure de
+fin`, `E-mail`, `Nom` — sont écartées des réponses : les lire comme des
+réponses ferait passer l'heure de début pour la date d'apparition du
+problème.
+
+Si un libellé change, `FORMULAIRE_CHAMPS` le raccorde sans toucher au code ;
+l'onglet **Paramètres → Formulaire externe** affiche les noms acceptés.
 
 ```
 FORMULAIRE_CHAMPS={"equipement":"Numéro GMAO","urgence":"Niveau de gravité"}
 ```
 
-### 2. Relever le paramètre de pré-remplissage
-
-Dans l'éditeur du formulaire : **… → Obtenir un lien pré-rempli**, remplir la
-seule question « Code inventaire », copier le lien produit. Il ressemble à
-
-```
-https://forms.cloud.microsoft/r/u4qTeSeAUF?r8f3c1e0a4b24d0e9=TEST
-                                            └──── à relever ────┘
-```
-
-Ce nom de paramètre est propre à la question ; il ne change pas tant que la
-question n'est pas supprimée.
+### 2. Déclarer le formulaire
 
 ```ini
 FORMULAIRE_SOURCE=microsoft
 FORMULAIRE_URL=https://forms.cloud.microsoft/r/u4qTeSeAUF
-FORMULAIRE_PARAM_CODE=r8f3c1e0a4b24d0e9
 ```
 
-### 3. Choisir le chemin des réponses
+`FORMULAIRE_URL` ne sert qu'à afficher le lien dans l'interface : le QR
+existant reste celui qui est distribué.
 
-Microsoft Forms n'expose **pas** d'API de lecture : on ne peut pas
-l'interroger. Dans les deux cas, un flux Power Automate se déclenche à chaque
-soumission — *Quand une nouvelle réponse est envoyée* → *Obtenir les détails
-de la réponse*.
+### 3. Laisser la GMAO lire le classeur des réponses
 
-#### a) Webhook — si le serveur est joignable depuis Internet
+Microsoft Forms n'expose **aucune API de lecture des réponses** — c'est le mur
+contre lequel on se cogne en cherchant de ce côté. En revanche, Forms recopie
+de lui-même chaque réponse dans un classeur Excel sur OneDrive,
+**nativement, sans automatisation**. C'est par là qu'on passe.
 
-Le flux appelle la GMAO. Immédiat, rien d'autre à installer.
+> L'autre voie — une action HTTP dans Power Automate qui appellerait la GMAO —
+> est un connecteur **payant**, indisponible sur un compte Microsoft personnel,
+> et elle suppose en plus que le serveur soit joignable depuis Internet. Elle
+> reste possible (`MSFORMS_MODE=webhook`), mais ce n'est pas la voie par défaut.
 
-```bash
-openssl rand -hex 24      # → FORMULAIRE_SECRET_WEBHOOK dans .env
-```
+#### Inscrire une application
 
-```ini
-MSFORMS_MODE=webhook
-FORMULAIRE_SECRET_WEBHOOK=<le secret>
-```
+Un compte Microsoft **personnel** (outlook.fr, hotmail.com, live.fr) n'a pas
+de locataire où accorder des autorisations d'application. Le seul flux
+possible est donc le flux **délégué** : la GMAO agit au nom du compte
+propriétaire du classeur, qui l'autorise une fois.
 
-Dans le flux, une action **HTTP** :
+Sur [entra.microsoft.com](https://entra.microsoft.com), connecté avec le
+compte qui possède le classeur — **Inscriptions d'applications → Nouvelle
+inscription** :
 
-```
-POST https://gmao.monkole.cd/api/integrations/formulaire/<le-secret>
-Content-Type: application/json
+| Réglage | Valeur |
+|---|---|
+| Nom | `GMAO — lecture des signalements` |
+| Types de comptes | **Comptes Microsoft personnels uniquement** (ou « … et comptes personnels ») |
+| URI de redirection | aucune |
 
-{ "id": "@{triggerOutputs()?['body/resourceData/responseId']}",
-  "date": "@{body('Obtenir_les_détails_de_la_réponse')?['submitDate']}",
-  "reponses": {
-    "Code inventaire": "@{...}",
-    "Description du problème": "@{...}",
-    "Priorité": "@{...}"
-  } }
-```
+Puis, dans l'inscription créée :
 
-La disposition à plat est acceptée aussi — une propriété par question, sans
-l'enveloppe `reponses` — ce qui permet de construire le corps en glissant
-directement les champs.
-
-#### b) Classeur — si le serveur n'a pas d'adresse publique
-
-C'est le cas d'une GMAO installée derrière la connexion de l'hôpital. Le flux
-ajoute une ligne dans un classeur Excel (action **Ajouter une ligne dans un
-tableau**), et la GMAO relit ce tableau. **Rien n'entre : c'est le serveur qui
-sort.**
-
-Il faut une inscription d'application dans Entra ID :
-
-1. **Entra ID → Inscriptions d'applications → Nouvelle inscription.**
-2. Relever l'**ID d'application** et l'**ID de locataire**.
-3. **Certificats et secrets → Nouveau secret client**, relever la valeur.
-4. **Autorisations d'API → Microsoft Graph → Autorisations d'application →
-   `Files.Read.All`**, puis **Accorder le consentement administrateur**.
+- **Authentification** → *Paramètres avancés* → **Autoriser les flux client
+  publics : Oui**. Sans cela, Microsoft réclame un secret client
+  (`AADSTS7000218`) qu'une inscription de client public n'a pas.
+- **API → Ajouter une autorisation → Microsoft Graph → autorisations
+  DÉLÉGUÉES → `Files.Read`**. Des autorisations *d'application* ne
+  fonctionneraient pas ici.
+- **Ne pas** créer de secret client.
 
 ```ini
 MSFORMS_MODE=graph
-MSFORMS_TENANT_ID=<id de locataire>
-MSFORMS_CLIENT_ID=<id d'application>
-MSFORMS_CLIENT_SECRET=<secret>
-MSFORMS_CLASSEUR=site:monkole.sharepoint.com:/sites/Maintenance:/Documents partages/reponses.xlsx
+MSFORMS_AUTH=delegue
+MSFORMS_TENANT_ID=consumers
+MSFORMS_CLIENT_ID=<ID d'application>
+MSFORMS_CLIENT_SECRET=
+MSFORMS_CLASSEUR=me:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx
 MSFORMS_TABLEAU=Tableau1
 FORMULAIRE_INTERVALLE_MIN=5
 ```
 
-Deux écritures pour `MSFORMS_CLASSEUR` :
+Quatre écritures pour `MSFORMS_CLASSEUR` :
 
 ```
-drive:<driveId>:/Documents/reponses.xlsx
-site:<hôte>:/sites/<nom>:/Documents partages/reponses.xlsx
+me:/Maintenance/reponses.xlsx          OneDrive du compte autorisé
+item:<driveItemId>                     le même, par identifiant
+drive:<driveId>:/chemin.xlsx           un autre OneDrive
+site:<hôte>:/sites/<nom>:/chemin.xlsx  une bibliothèque SharePoint
 ```
 
-Le repère de lecture est la colonne **ID** du tableau, que Forms incrémente.
-Les deux chemins peuvent cohabiter : l'identifiant de réponse sert de clé
-d'unicité, donc une réponse ne donne jamais deux demandes.
+La forme `item:` est la plus sûre : elle survit à un renommage et ne souffre
+ni des accents ni des espaces — dont le nom du classeur de Monkole est
+abondamment pourvu. L'identifiant se relève dans
+[Graph Explorer](https://developer.microsoft.com/graph/graph-explorer) :
 
-### 4. Imprimer les étiquettes
+```
+GET /me/drive/root:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx
+```
+
+#### Autoriser la GMAO, une seule fois
+
+```bash
+docker compose exec api npm run lier-microsoft --workspace=api
+```
+
+La commande affiche un code et une adresse. On ouvre l'adresse dans un
+navigateur — depuis n'importe quel poste —, on se connecte avec le compte
+propriétaire du classeur, on saisit le code. La GMAO reçoit son autorisation
+et vérifie aussitôt qu'elle accède bien au classeur, en listant ses tableaux.
+
+C'est le flux « code d'appareil », prévu pour les machines sans navigateur :
+il évite d'avoir à exposer une adresse de redirection publique, que la GMAO
+n'a pas.
+
+> **Le jeton vit en base, pas dans `.env`.** Microsoft en délivre un nouveau à
+> chaque renouvellement et invalide le précédent. S'il n'était conservé que
+> dans le fichier de configuration, la collecte s'arrêterait au premier
+> redémarrage suivant. La table `integrations_secrets` contient donc un secret
+> en clair : une sauvegarde de la base doit être traitée en conséquence.
+>
+> Le jeton expire après 90 jours sans usage. Une collecte qui tourne toutes
+> les cinq minutes le renouvelle bien avant. Après un long arrêt, relancer
+> `lier-microsoft`.
+
+### 4. Étiquettes par équipement — facultatif, plus tard
+
+Tout ce qui précède fonctionne sans toucher au QR distribué. Si un jour vous
+voulez qu'une demande arrive déjà rattachée à sa machine, deux réglages
+existent, indépendants l'un de l'autre :
+
+- **`FORMULAIRE_PARAM_CODE`** — le paramètre d'URL qui pré-remplit le numéro
+  d'inventaire, relevé dans l'éditeur du formulaire par *… → Obtenir un lien
+  pré-rempli*. Suppose une question « Code inventaire » dans le formulaire.
+- **`FORMULAIRE_BASE_QR`** — l'adresse publique de la GMAO. Renseignée,
+  l'étiquette encode `gmao.monkole.cd/r/<code>`, que la GMAO redirige vers le
+  formulaire du moment : changer de destination ne demande alors plus de
+  recoller le parc. À ne choisir que si les téléphones des services savent
+  joindre le serveur — ce qui exclut les sites isolés.
+
+### 5. Imprimer les étiquettes
 
 Page **Équipements** → sélection → **Étiquettes**. Chaque étiquette porte deux
 codes : le code-barres linéaire pour les douchettes du magasin, et le QR pour
-les téléphones des services, qui mène au formulaire pré-rempli.
+les téléphones des services.
 
 Le QR est encodé en correction « M » : sur une étiquette de deux centimètres,
 ce qui décide de la lecture est la taille d'un module, pas la marge de
@@ -483,6 +543,27 @@ représente indéfiniment.
 Les réponses d'origine sont conservées telles quelles et dépliables dans le
 panneau de détail de la demande. Quand l'interprétation est contestée — « ce
 n'est pas ce que j'ai coché » — c'est là qu'on tranche.
+
+### Du secteur à l'équipe
+
+Le secteur déclaré donne un corps de métier, qui présélectionne l'équipe au
+moment de créer l'ordre de travail :
+
+| Secteur du formulaire | Corps de métier |
+|---|---|
+| Plomberie, Électricité, Climatisation, Menuiserie, Maçonnerie | Technique bâtiment |
+| Gaz Médicaux | Fluides médicaux |
+| Biomédical | Biomédical |
+| It/réseau | Informatique |
+| Autres | déduit des mots de la demande, sinon laissé au responsable |
+
+« Autres » est le choix de qui ne sait pas où se ranger : les mots de la
+demande prennent alors le relais. « Robinet qui fuit » n'a pas besoin qu'on
+précise « Plomberie ».
+
+La présélection ne décide de rien — le domaine de l'équipement, une fois
+celui-ci rattaché, l'emporte sur le secteur déclaré : le demandeur dit ce
+qu'il croit, l'inventaire dit ce qui est.
 
 ### Le rattachement dépend du référentiel
 

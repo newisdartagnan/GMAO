@@ -4,6 +4,7 @@ import { commande, lireBase } from '../etat.ts';
 import { pool } from '../db/pool.ts';
 import { config, recuperationActive } from '../config.ts';
 import { chargerCorrespondance, convertirSoumission, integrerDemande } from './formulaires.ts';
+import { ecrireSecret, lireSecret } from './secrets.ts';
 import type { SoumissionFormulaire } from './formulaires.ts';
 import * as jotform from './jotform.ts';
 import * as microsoft from './microsoft.ts';
@@ -158,6 +159,22 @@ export interface ResultatSynchronisation extends ResultatImport {
   jusqua: string | null;
 }
 
+/**
+ * Le jeton de rafraîchissement courant, celui de la base, avec celui du
+ * fichier .env en secours — utile pour amorcer une installation reprise
+ * ailleurs, sans rejouer l'autorisation.
+ */
+async function jetonRafraichissement(): Promise<string | undefined> {
+  const enBase = await lireSecret(microsoft.SOURCE, 'refresh_token');
+  return enBase ?? (config.microsoft.refreshToken || undefined);
+}
+
+/** Le connecteur Microsoft a-t-il reçu son autorisation ? */
+export async function microsoftAutorise(): Promise<boolean> {
+  if (config.microsoft.auth === 'application') return Boolean(config.microsoft.clientSecret);
+  return Boolean(await jetonRafraichissement());
+}
+
 async function interroger(depuis?: string) {
   if (config.formulaire.source === 'jotform') {
     return jotform.recupererSoumissions({
@@ -167,11 +184,19 @@ async function interroger(depuis?: string) {
       depuis,
     });
   }
+
+  // Microsoft remplace le jeton de rafraîchissement à chaque renouvellement :
+  // le nouveau est rangé aussitôt, sans quoi la collecte s'arrêterait au
+  // redémarrage suivant.
+  microsoft.definirEnregistrementRefresh((jeton) => ecrireSecret(microsoft.SOURCE, 'refresh_token', jeton));
+
   return microsoft.recupererSoumissions(
     {
+      auth: config.microsoft.auth,
       tenantId: config.microsoft.tenantId,
       clientId: config.microsoft.clientId,
-      clientSecret: config.microsoft.clientSecret,
+      clientSecret: config.microsoft.clientSecret || undefined,
+      refreshToken: await jetonRafraichissement(),
       classeur: config.microsoft.classeur,
       tableau: config.microsoft.tableau,
       base: config.microsoft.graphBase,
@@ -192,8 +217,14 @@ export async function synchroniser(forcerDepuis?: string): Promise<ResultatSynch
   if (!recuperationActive()) {
     throw new Error(
       config.formulaire.source === 'microsoft'
-        ? 'La lecture du classeur n’est pas configurée : renseignez MSFORMS_MODE=graph et les identifiants Entra ID.'
+        ? 'La lecture du classeur n’est pas configurée : renseignez MSFORMS_MODE=graph, MSFORMS_CLIENT_ID et MSFORMS_CLASSEUR.'
         : 'Le connecteur n’est pas configuré : renseignez FORMULAIRE_SOURCE et les identifiants du fournisseur.',
+    );
+  }
+  if (config.formulaire.source === 'microsoft' && !(await microsoftAutorise())) {
+    throw new Error(
+      'La GMAO n’est pas encore autorisée à lire le classeur. Lancez une fois, sur le serveur : ' +
+        'docker compose exec api npm run lier-microsoft --workspace=api',
     );
   }
 
@@ -232,6 +263,7 @@ export async function importerWebhook(soumission: SoumissionFormulaire): Promise
 }
 
 let minuterie: NodeJS.Timeout | null = null;
+let autorisationSignalee = false;
 
 /** Démarre la boucle de récupération si la configuration la rend possible. */
 export function demarrerCollecte(journaliser: (m: string, e?: unknown) => void): void {
@@ -249,6 +281,19 @@ export function demarrerCollecte(journaliser: (m: string, e?: unknown) => void):
 
   const periode = Math.max(1, config.formulaire.intervalleMin) * 60_000;
   const tour = async () => {
+    if (config.formulaire.source === 'microsoft' && !(await microsoftAutorise())) {
+      // Dire une fois, puis se taire : répéter l'avertissement toutes les cinq
+      // minutes noierait le journal sans rien apprendre de plus.
+      if (!autorisationSignalee) {
+        autorisationSignalee = true;
+        journaliser(
+          'Formulaire microsoft : en attente d’autorisation — lancez ' +
+            '« npm run lier-microsoft --workspace=api » sur le serveur',
+        );
+      }
+      return;
+    }
+    autorisationSignalee = false;
     try {
       const r = await synchroniser();
       if (r.creees.length || r.rejets.length) {

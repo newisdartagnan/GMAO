@@ -14,7 +14,7 @@ import { useGMAO } from '@/data/store';
 import { api } from '@/data/api';
 import type { EtatIntegrations } from '@/data/api';
 import { exporterJSON, telecharger, versCSV } from '@/data/persistance';
-import { dateHeure, lienFormulaireExterne } from '@gmao/partage';
+import { dateHeure, lienQrEtiquette } from '@gmao/partage';
 import { montant, nombre } from '@gmao/partage';
 import { CRITICITE, DOMAINE, REFERENTIEL, ROLE } from '@gmao/partage';
 import type { BaseGMAO, FamilleEquipement, Local, ServiceHospitalier, Site } from '@gmao/partage';
@@ -714,15 +714,27 @@ function OngletIntegrations() {
                 label: 'Acheminement',
                 valeur:
                   f.mode === 'graph'
-                    ? 'Power Automate → classeur Excel, relu par la GMAO'
+                    ? 'Classeur Excel de Forms, relu par la GMAO'
                     : f.mode === 'webhook'
-                      ? 'Power Automate → appel direct de la GMAO'
+                      ? 'Appel entrant vers la GMAO'
                       : 'API du fournisseur',
               },
               {
                 label: 'Référence',
                 valeur: f.reference ? <span className="font-mono text-[11px] break-all">{f.reference}</span> : '—',
               },
+              ...(f.source === 'microsoft'
+                ? [
+                    {
+                      label: 'Autorisation',
+                      valeur: f.autorise ? (
+                        <Badge ton="succes">accordée{f.autoriseLe ? ` le ${dateHeure(f.autoriseLe)}` : ''}</Badge>
+                      ) : (
+                        <Badge ton="attention">à faire</Badge>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 label: 'Récupération',
                 valeur: f.recuperationActive ? (
@@ -743,6 +755,17 @@ function OngletIntegrations() {
               { label: 'Demandes reçues', valeur: nombre(externes.length, 0) },
             ]}
           />
+
+          {f.source === 'microsoft' && !f.autorise && f.mode === 'graph' && (
+            <div className="mt-3">
+              <Encart ton="attention" titre="Le connecteur n’est pas encore autorisé">
+                Microsoft exige qu’un compte autorise la GMAO à lire le classeur. À lancer une fois, sur le serveur :
+                <span className="mt-1 block font-mono text-xs">
+                  docker compose exec api npm run lier-microsoft --workspace=api
+                </span>
+              </Encart>
+            </div>
+          )}
 
           {f.etat?.derniereErreur && (
             <div className="mt-3">
@@ -802,14 +825,29 @@ function OngletIntegrations() {
 
       <div className="space-y-4">
         <Carte titre="Étiquettes à coller" sousTitre="Ce que le QR code ouvre">
-          {f.url && exemple ? (
+          {(f.baseQr || f.url) && exemple ? (
             <>
               <p className="text-sm text-slate-600">
                 Chaque étiquette d’inventaire porte un QR code propre à l’équipement. Le service scanne, le formulaire
                 s’ouvre avec le numéro déjà rempli, et la demande arrive rattachée à la bonne machine.
               </p>
               <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 font-mono text-[11px] break-all text-slate-600">
-                {lienFormulaireExterne(f.url, f.paramCode, exemple.code)}
+                {lienQrEtiquette({ baseRedirection: f.baseQr, url: f.url, paramCode: f.paramCode }, exemple.code)}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                {f.baseQr ? (
+                  <>
+                    Le QR passe par la GMAO, qui aiguille vers le formulaire du moment : changer de destination ne
+                    demande pas de réimprimer une seule étiquette. Le téléphone qui scanne doit pouvoir joindre le
+                    serveur.
+                  </>
+                ) : (
+                  <>
+                    Le QR mène droit au formulaire. Pour pouvoir changer de destination sans recoller les étiquettes,
+                    renseignez <span className="font-mono">FORMULAIRE_BASE_QR</span> — à condition que les téléphones
+                    des services sachent joindre la GMAO.
+                  </>
+                )}
               </p>
               <p className="mt-2 text-xs text-slate-500">
                 Les étiquettes s’impriment depuis la page Équipements, sélection puis « Étiquettes ». Le QR générique

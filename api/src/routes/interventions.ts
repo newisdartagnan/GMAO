@@ -12,6 +12,7 @@ import {
   refuserDemande,
 } from '@gmao/partage';
 import type { CausePanne, PrioriteOT, StatutOT } from '@gmao/partage';
+import { normaliser, suggererEquipements } from '@gmao/partage';
 import { exiger, utilisateurDe } from '../auth.ts';
 import { ErreurMetier, idParam, repondreCommande, valider } from './aide.ts';
 import { lireBase } from '../etat.ts';
@@ -97,6 +98,84 @@ export async function routesInterventions(app: FastifyInstance): Promise<void> {
         const d = b.demandes.find((x) => x.id === id);
         if (!d) throw new ErreurMetier('Demande introuvable', 404);
         d.statut = 'en_analyse';
+      },
+    );
+  });
+
+  /**
+   * Équipements qui peuvent correspondre au signalement.
+   *
+   * Le formulaire en service ne demande pas de numéro d'inventaire : la
+   * machine est décrite en toutes lettres. Cette route propose les candidats,
+   * classés, avec la raison de chaque proposition — le rattachement, lui,
+   * reste une décision prise à l'écran.
+   */
+  app.get('/api/demandes/:id/equipements-suggeres', { preHandler: exiger('lire') }, async (requete, reponse) => {
+    const { id } = valider(idParam, requete.params);
+    const base = lireBase();
+    const demande = base.demandes.find((d) => d.id === id);
+    if (!demande) throw new ErreurMetier('Demande introuvable', 404);
+
+    const reponses = demande.origineExterne?.reponses ?? {};
+    const valeurDe = (motif: RegExp) =>
+      Object.entries(reponses).find(([cle]) => motif.test(normaliser(cle)))?.[1];
+
+    const candidats = suggererEquipements(base, {
+      designation: demande.designationLibre,
+      localId: demande.localId,
+      salle: valeurDe(/salle|local/),
+      lieu: valeurDe(/lieu|batiment|site/),
+      domaine: demande.domaineSuggere,
+    });
+
+    return reponse.send({
+      candidats: candidats.map((c) => ({
+        id: c.equipement.id,
+        code: c.equipement.code,
+        designation: c.equipement.designation,
+        marque: c.equipement.marque,
+        modele: c.equipement.modele,
+        criticite: c.equipement.criticite,
+        serviceId: c.equipement.serviceId,
+        localId: c.equipement.localId,
+        score: c.score,
+        raisons: c.raisons,
+      })),
+    });
+  });
+
+  /** Rattache — ou détache — un équipement à une demande. */
+  app.post('/api/demandes/:id/equipement', { preHandler: exiger('planifier') }, async (requete, reponse) => {
+    const { id } = valider(idParam, requete.params);
+    const { equipementId } = valider(
+      z.object({ equipementId: z.string().nullable() }),
+      requete.body,
+    );
+    const base = lireBase();
+    const equipement = equipementId ? base.equipements.find((e) => e.id === equipementId) : undefined;
+    if (equipementId && !equipement) throw new ErreurMetier('Équipement inconnu', 422);
+
+    await repondreCommande(
+      requete,
+      reponse,
+      {
+        libelle: equipement
+          ? `Signalement rattaché à ${equipement.code}`
+          : 'Rattachement à un équipement retiré',
+        entiteType: 'demande',
+        entiteId: id,
+      },
+      (b) => {
+        const d = b.demandes.find((x) => x.id === id);
+        if (!d) throw new ErreurMetier('Demande introuvable', 404);
+        d.equipementId = equipement?.id;
+        // Le local et le service suivent la machine : c'est là qu'elle est,
+        // quoi qu'ait indiqué le demandeur.
+        if (equipement) {
+          d.localId = equipement.localId;
+          d.serviceId = equipement.serviceId;
+        }
+        return d;
       },
     );
   });
