@@ -1,5 +1,5 @@
 import type { BaseGMAO, DemandeIntervention, PrioriteOT } from '@gmao/partage';
-import { aujourdHui, isoHeure, normaliser, numeroSuivant, uid } from '@gmao/partage';
+import { aujourdHui, deduireDomaine, isoHeure, normaliser, numeroSuivant, uid } from '@gmao/partage';
 
 /**
  * Conversion d'une soumission de formulaire en demande d'intervention.
@@ -394,6 +394,11 @@ export function convertirSoumission(
       impactPatient: impact,
       canal: 'qr_code',
       statut: 'nouvelle',
+      // Le corps de métier présélectionne l'équipe à la création de l'ordre
+      // de travail ; la désignation libre sert à retrouver la machine dans
+      // l'inventaire. Aucun des deux ne décide seul.
+      domaineSuggere: deduireDomaine({ secteur, designation, description }),
+      designationLibre: designation ?? undefined,
       origineExterne: {
         source: soumission.source,
         formulaireId: soumission.formulaireId,

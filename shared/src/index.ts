@@ -19,5 +19,7 @@ export * from './alertes';
 export * from './actions';
 export * from './inspections';
 export * from './liens';
+export * from './secteurs';
+export * from './rapprochement';
 export * from './patch';
 export * from './donnees-demo';
