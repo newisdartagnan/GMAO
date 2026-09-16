@@ -1,4 +1,4 @@
-import { construireBaseDemo, lienFormulaireExterne } from '@gmao/partage';
+import { construireBaseDemo, lienFormulaireExterne, lienQrEtiquette, lienRedirection } from '@gmao/partage';
 import type { BaseGMAO } from '@gmao/partage';
 import {
   CORRESPONDANCE_PAR_DEFAUT,
@@ -308,8 +308,89 @@ console.log('\nWebhook Power Automate');
 }
 
 /* ================================================================== */
+console.log('\nClasseur réel de Monkole — colonnes telles qu’elles sont');
+
+{
+  // Les en-têtes exacts du classeur en service. Les colonnes de service
+  // (« Id_formulaire », « Date de plainté ») ne sont pas des réponses.
+  const COLONNES = [
+    'Id_formulaire', 'Date de plainté', 'Nom du demandeur', 'Date de dèbut du probleme',
+    'Secteur', 'Lieu', 'Salle de lieu', 'Équipement', 'Description du problème', 'Priorité',
+  ];
+  const LIGNE = [
+    '17', '26/08/2026 07:12', 'Béatrice Ilunga — 0810000000', 'depuis 3 jours',
+    'Gaz Médicaux', 'MKL2', 'Bloc opératoire', 'prise murale oxygène',
+    'Sifflement continu au raccord mural.', 'Haute',
+  ];
+
+  const s = microsoft.lireLigneClasseur(COLONNES, LIGNE, 'classeur-monkole');
+  verifier('identifiant pris dans la première colonne', s?.id, '17');
+  verifier('« Date de plainté » lue comme horodatage', s?.date, '2026-08-26T07:12:00');
+  verifier(
+    'colonnes de service écartées des réponses',
+    s?.reponses.map((r) => r.libelle),
+    ['Nom du demandeur', 'Date de dèbut du probleme', 'Secteur', 'Lieu', 'Salle de lieu', 'Équipement',
+     'Description du problème', 'Priorité'],
+  );
+
+  const r = s ? convertirSoumission(base, s, correspondance, porteur) : undefined;
+  verifier('objet tiré de la description', r?.demande?.objet, 'Sifflement continu au raccord mural');
+  verifier('« Haute » → P1', r?.demande?.urgenceDeclaree, 'P1');
+  verifier(
+    '« Date de dèbut du probleme » lue comme ancienneté, pas comme objet',
+    r?.demande?.description,
+    'Sifflement continu au raccord mural.\n' +
+      'Constaté : depuis 3 jours\n' +
+      'Secteur indiqué : Gaz Médicaux\n' +
+      'Déclaré par : Béatrice Ilunga — 0810000000\n' +
+      'Localisation indiquée : MKL2 — Bloc opératoire\n' +
+      'Équipement indiqué : prise murale oxygène',
+  );
+  verifier('horodatage repris sur la demande', r?.demande?.dateCreation, '2026-08-26T07:12:00');
+}
+
+{
+  // Le même classeur, avec la question « Code inventaire » ajoutée pour les
+  // QR par équipement.
+  const COLONNES = [
+    'Id_formulaire', 'Date de plainté', 'Code inventaire', 'Nom du demandeur',
+    'Secteur', 'Description du problème', 'Priorité',
+  ];
+  const LIGNE = ['18', '26/08/2026 08:00', equipement.code, 'Joseph Kabamba',
+    'Biomédical', 'Alarme permanente.', 'Haute'];
+  const s = microsoft.lireLigneClasseur(COLONNES, LIGNE, 'classeur-monkole');
+  const r = s ? convertirSoumission(base, s, correspondance, porteur) : undefined;
+  verifier('code d’inventaire reconnu dans le classeur', r?.demande?.equipementId, equipement.id);
+}
+
+{
+  // Un classeur laissé avec les en-têtes que Forms génère par défaut.
+  const COLONNES = ['ID', 'Heure de début', 'Heure de fin', 'E-mail', 'Nom',
+    'Description du problème', 'Priorité'];
+  const LIGNE = ['3', '26/08/2026 09:00', '26/08/2026 09:05', 'a@b.cd', 'Anonyme',
+    'Lampe grillée', 'Basse'];
+  const s = microsoft.lireLigneClasseur(COLONNES, LIGNE, 'c');
+  verifier(
+    'en-têtes Forms par défaut : seules les réponses restent',
+    s?.reponses.map((r) => r.libelle),
+    ['Description du problème', 'Priorité'],
+  );
+  verifier('« Heure de fin » préférée à « Heure de début »', s?.date, '2026-08-26T09:05:00');
+}
+
+/* ================================================================== */
 console.log('\nChemin du classeur Microsoft Graph');
 
+verifier(
+  'classeur du compte autorisé, par chemin',
+  microsoft.cheminClasseur('me:/Maintenance/Formulaire maintenance -- Hôpital Monkole.xlsx'),
+  '/me/drive/root:/Maintenance/Formulaire%20maintenance%20--%20H%C3%B4pital%20Monkole.xlsx:',
+);
+verifier(
+  'classeur désigné par son identifiant',
+  microsoft.cheminClasseur('item:01ABCDEF123456'),
+  '/me/drive/items/01ABCDEF123456',
+);
 verifier(
   'classeur dans un OneDrive',
   microsoft.cheminClasseur('drive:b!aZ12:/Documents/reponses.xlsx'),
@@ -329,6 +410,31 @@ verifier(
   }
   verifier('écriture non reconnue refusée tôt', refus, 'MSFORMS_CLASSEUR doit comm');
 }
+
+/* ================================================================== */
+console.log('\nQR code des étiquettes');
+
+verifier(
+  'QR par la GMAO, destination changeable',
+  lienQrEtiquette({ baseRedirection: 'https://gmao.monkole.cd', url: 'https://forms.cloud.microsoft/r/u4qT' }, 'REA-0020'),
+  'https://gmao.monkole.cd/r/REA-0020',
+);
+verifier(
+  'barre finale en trop sans effet',
+  lienRedirection('https://gmao.monkole.cd/', 'REA-0020'),
+  'https://gmao.monkole.cd/r/REA-0020',
+);
+verifier(
+  'QR générique, sans équipement',
+  lienRedirection('https://gmao.monkole.cd'),
+  'https://gmao.monkole.cd/r',
+);
+verifier(
+  'sans adresse publique, le QR mène droit au formulaire',
+  lienQrEtiquette({ url: 'https://forms.cloud.microsoft/r/u4qT', paramCode: 'r8f3' }, 'REA-0020'),
+  'https://forms.cloud.microsoft/r/u4qT?r8f3=REA-0020',
+);
+verifier('rien de configuré, pas de QR', lienQrEtiquette({}, 'REA-0020'), '');
 
 /* ================================================================== */
 console.log('\nJotForm');

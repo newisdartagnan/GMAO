@@ -74,13 +74,29 @@ source_formulaire="$(lire FORMULAIRE_SOURCE)"
 case "${source_formulaire:-aucune}" in
   microsoft)
     conseiller MSFORMS_MODE "« webhook » ou « graph »"
-    if [ "$(lire MSFORMS_MODE)" = "graph" ]; then
-      exiger MSFORMS_TENANT_ID "identifiant du locataire Microsoft 365" 10
-      exiger MSFORMS_CLIENT_ID "identifiant de l'application inscrite" 10
-      exiger MSFORMS_CLIENT_SECRET "secret de l'application inscrite" 10
-      exiger MSFORMS_CLASSEUR "chemin du classeur des réponses" 3
+    mode="$(lire MSFORMS_MODE)"
+    if [ "${mode:-graph}" = "graph" ]; then
+      exiger MSFORMS_CLIENT_ID "identifiant de l'application inscrite dans Entra ID" 10
+      exiger MSFORMS_CLASSEUR "emplacement du classeur des réponses" 3
+      case "$(lire MSFORMS_CLASSEUR)" in
+        me:*|item:*|drive:*|site:*|'') ;;
+        *) rouge "✘ MSFORMS_CLASSEUR doit commencer par me: / item: / drive: / site:"
+           manques=$((manques + 1)) ;;
+      esac
+      if [ "$(lire MSFORMS_AUTH)" = "application" ]; then
+        exiger MSFORMS_TENANT_ID "identifiant du locataire Microsoft 365" 10
+        exiger MSFORMS_CLIENT_SECRET "secret de l'application inscrite" 10
+      else
+        if [ -n "$(lire MSFORMS_CLIENT_SECRET)" ]; then
+          orange "• MSFORMS_CLIENT_SECRET est renseigné en flux délégué — un client"
+          orange "  public n'a pas de secret, et l'envoyer fait refuser l'échange."
+          avertissements=$((avertissements + 1))
+        fi
+        orange "• L'autorisation s'obtient à part, une seule fois :"
+        orange "    docker compose exec api npm run lier-microsoft --workspace=api"
+      fi
     else
-      exiger FORMULAIRE_SECRET_WEBHOOK "secret attendu sur l'appel de Power Automate" 16
+      exiger FORMULAIRE_SECRET_WEBHOOK "secret attendu sur l'appel entrant" 16
     fi
     conseiller FORMULAIRE_URL "lien du formulaire, encodé dans le QR des étiquettes"
     ;;
@@ -98,7 +114,14 @@ esac
 
 echo
 if [ "$manques" -gt 0 ]; then
-  rouge "$manques réglage(s) manquant(s) : « docker compose up » échouera."
+  # DB_PASSWORD et JWT_SECRET arrêtent Compose lui-même ; les autres
+  # n'empêchent que le connecteur de fonctionner. Le dire tel quel évite de
+  # chercher une panne de démarrage qui n'existe pas.
+  if [ -z "$(lire DB_PASSWORD)" ] || [ -z "$(lire JWT_SECRET)" ]; then
+    rouge "$manques réglage(s) à corriger, dont un indispensable : « docker compose up » échouera."
+  else
+    rouge "$manques réglage(s) à corriger — la pile démarrera, le connecteur ne fonctionnera pas."
+  fi
   exit 1
 fi
 if [ "$avertissements" -gt 0 ]; then

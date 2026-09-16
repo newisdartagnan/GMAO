@@ -51,7 +51,12 @@ export function ecrireJeton(jeton: string | null): void {
 
 /** Réglages de déploiement, distincts des données de l'hôpital. */
 export interface ConfigurationClient {
-  formulaireExterne: { url: string; champCode: string } | null;
+  formulaireExterne: {
+    /** Renseignée, le QR passe par la GMAO plutôt que par le formulaire. */
+    baseRedirection: string | null;
+    url: string | null;
+    paramCode: string;
+  } | null;
 }
 
 export interface EtatIntegrations {
@@ -63,11 +68,17 @@ export interface EtatIntegrations {
     webhookOuvert: boolean;
     url: string | null;
     paramCode: string;
+    baseQr: string | null;
     correspondance: Record<string, string[]>;
     /** Ce qui identifie le formulaire côté fournisseur. */
     reference: string | null;
     /** « api » pour JotForm, « graph » ou « webhook » pour Microsoft. */
     mode: string;
+    /** « delegue » ou « application » pour Microsoft. */
+    auth: string | null;
+    /** Le connecteur a-t-il reçu son autorisation ? */
+    autorise: boolean;
+    autoriseLe: string | null;
     etat: {
       derniereLecture: string | null;
       dernierHorodatage: string | null;
