@@ -458,7 +458,23 @@ d'applications → Nouvelle inscription** :
 |---|---|
 | Nom | `GMAO — lecture des signalements` |
 | Types de comptes | **Comptes dans un annuaire organisationnel quelconque *et* comptes Microsoft personnels** |
-| URI de redirection | aucune |
+| URI de redirection | **laisser entièrement vide** — ne pas choisir « Web », ne rien saisir |
+
+> **Ne mettez rien dans « URI de redirection ».** La page annonce qu'« une
+> valeur est requise pour la plupart des scénarios d'authentification » : ce
+> n'est pas le nôtre. Le flux par code d'appareil n'utilise aucune
+> redirection, et la GMAO n'a de toute façon pas d'adresse publique où être
+> renvoyée.
+>
+> Ce champ attend l'adresse à laquelle **votre application** reçoit la
+> réponse d'authentification — jamais l'adresse du formulaire ni celle du
+> classeur. Y coller un lien OneDrive ou Forms fait échouer la création :
+>
+> ```
+> Failed to create … application. Error detail: URL may not contain a query string.
+> ```
+>
+> Le lien du formulaire se met dans `FORMULAIRE_URL`, dans le fichier `.env`.
 
 Puis, dans l'inscription créée :
 
@@ -483,6 +499,9 @@ FORMULAIRE_INTERVALLE_MIN=5
 > inscrite.** Y mettre l'identifiant du locataire de l'hôpital empêche un
 > compte personnel de s'authentifier, alors même que c'est lui qui détient le
 > formulaire. `common` accepte les deux.
+
+Une fois l'inscription créée, l'**ID d'application (client)** figure sur sa
+page d'aperçu : c'est `MSFORMS_CLIENT_ID`.
 
 #### Autoriser la GMAO, une seule fois
 
