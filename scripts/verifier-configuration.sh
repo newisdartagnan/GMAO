@@ -40,7 +40,8 @@ if [ ! -f "$ENV_FICHIER" ]; then
 fi
 
 # Lecture sans exécuter le fichier : une valeur qui contient un espace ou
-# un caractère de shell ne doit pas être interprétée.
+# un caractère de shell ne doit pas être interprétée. Le « [[:space:]]* »
+# final retire au passage le retour chariot d'un fichier en CRLF.
 lire() {
   sed -n "s/^[[:space:]]*$1=//p" "$ENV_FICHIER" | tail -1 | sed 's/[[:space:]]*$//'
 }
@@ -77,6 +78,20 @@ conseiller() {
     vert "✔ $nom"
   fi
 }
+
+# Un .env rédigé sous Windows colle un retour chariot à la fin de chaque
+# valeur. Invisible, il traverse tous les contrôles de présence et ressort
+# beaucoup plus loin — dans une URL, dans un mot de passe — sur une erreur
+# qui ne le nomme pas.
+if grep -q $'\r' "$ENV_FICHIER" 2>/dev/null; then
+  echo
+  orange "• $ENV_FICHIER est enregistré avec des fins de ligne Windows (CRLF)."
+  orange "  L'API nettoie ce qu'elle lit, mais convertir le fichier en LF évite"
+  orange "  toute surprise :   sed -i 's/\r$//' $ENV_FICHIER"
+  orange "  Attention : si DB_PASSWORD change de valeur, la base déjà créée"
+  orange "  refusera la connexion. Dans ce cas, garder le fichier tel quel."
+  avertissements=$((avertissements + 1))
+fi
 
 echo
 echo "Indispensable au démarrage de la pile"

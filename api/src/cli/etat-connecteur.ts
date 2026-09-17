@@ -22,7 +22,21 @@ const source = config.formulaire.source === 'microsoft' ? MICROSOFT : JOTFORM;
 
 await migrer(() => {});
 
-const ligne = (etiquette: string, valeur: string) => console.log(`  ${etiquette.padEnd(24)}${valeur}`);
+/**
+ * Une valeur porteuse d'un caractère de contrôle — un retour chariot venu
+ * d'un .env rédigé sous Windows — efface la ligne au lieu de s'afficher.
+ * On les rend visibles : c'est précisément quand la valeur est anormale
+ * qu'il faut pouvoir la lire.
+ */
+function lisible(valeur: string): string {
+  return valeur
+    .replace(/\r/g, '⏎CR')
+    .replace(/\n/g, '⏎LF')
+    .replace(/\t/g, '→');
+}
+
+const ligne = (etiquette: string, valeur: string) =>
+  console.log(`  ${etiquette.padEnd(24)}${lisible(valeur)}`);
 
 console.log('\nConnecteur');
 console.log('──────────');
