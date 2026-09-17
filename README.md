@@ -476,11 +476,26 @@ d'applications → Nouvelle inscription** :
 >
 > Le lien du formulaire se met dans `FORMULAIRE_URL`, dans le fichier `.env`.
 
-Puis, dans l'inscription créée :
+Puis, dans l'inscription créée — **l'étape suivante n'est pas facultative** :
 
 - **Authentification** → *Paramètres avancés* → **Autoriser les flux client
-  publics : Oui**. Sans cela Microsoft réclame un secret client
-  (`AADSTS7000218`) qu'une inscription de client public n'a pas.
+  publics : Oui** → **Enregistrer**.
+
+  C'est ce réglage qui rend le code d'appareil possible. Sans lui :
+
+  ```
+  AADSTS70002: The provided client is not supported for this feature.
+  The client application must be marked as 'mobile.'
+  ```
+
+  et, selon les cas, une réclamation de secret client (`AADSTS7000218`)
+  qu'une inscription de client public n'a pas. Si la bascule n'apparaît pas,
+  ajoutez d'abord **Ajouter une plateforme → Applications mobiles et de
+  bureau**, cochez `https://login.microsoftonline.com/common/oauth2/nativeclient`,
+  puis revenez à *Paramètres avancés*.
+
+  Laisser « URI de redirection » vide à la création n'empêche rien : c'est
+  ici, après coup, que l'inscription devient un client public.
 - **API → Ajouter une autorisation → Microsoft Graph → autorisations
   DÉLÉGUÉES → `Files.Read`** — ou `Files.Read.All` si le classeur appartient
   à un autre compte (voir plus bas).

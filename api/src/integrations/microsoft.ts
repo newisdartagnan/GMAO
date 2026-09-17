@@ -257,6 +257,15 @@ function messageErreur(donnees: { error?: string; error_description?: string }, 
   const brut = donnees.error_description?.split(/[\r\n]/)[0] ?? donnees.error ?? 'réponse inexploitable';
   // Les erreurs d'Entra ID portent un code que la documentation indexe ; le
   // garder évite une demi-heure de recherche à l'administrateur.
+  if (/AADSTS70002/.test(brut) && /mobile/i.test(brut)) {
+    return (
+      'l’inscription n’autorise pas les flux client publics, que le code ' +
+      'd’appareil exige. Dans Entra ID → votre inscription → Authentification ' +
+      '→ Paramètres avancés → « Autoriser les flux client publics » : Oui, ' +
+      'puis Enregistrer. Si la bascule est absente, ajoutez d’abord une ' +
+      'plateforme « Applications mobiles et de bureau ».'
+    );
+  }
   if (/AADSTS7000218/.test(brut)) {
     return (
       'l’inscription attend un secret client. Dans Entra ID → Authentification, ' +
@@ -278,6 +287,11 @@ function messageErreur(donnees: { error?: string; error_description?: string }, 
     );
   }
   return `${brut} (HTTP ${statut})`;
+}
+
+/** Même traduction, exposée pour le banc d'essai. */
+export function messageErreurPourEssai(description: string, statut: number): string {
+  return messageErreur({ error_description: description }, statut);
 }
 
 /**
