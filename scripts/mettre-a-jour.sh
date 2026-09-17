@@ -24,8 +24,16 @@ compose() { docker compose "$@"; }
 
 # ---------------------------------------------------------------------
 titre "1. Configuration"
+# Seul le code 1 arrête : il signale un réglage sans lequel Compose lui-même
+# échoue. Le code 2 dit que le connecteur est incomplet, ce qui n'empêche ni
+# de reconstruire ni de démarrer — et c'est justement la reconstruction qui
+# livre les commandes permettant de le compléter.
 if [ -x ./scripts/verifier-configuration.sh ]; then
-  ./scripts/verifier-configuration.sh || exit 1
+  ./scripts/verifier-configuration.sh
+  case "$?" in
+    0|2) ;;
+    *) exit 1 ;;
+  esac
 else
   orange "scripts/verifier-configuration.sh introuvable, contrôle sauté."
 fi
