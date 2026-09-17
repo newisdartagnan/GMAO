@@ -7,15 +7,16 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --alias:@gmao/partage=../shared/src/index.ts --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --alias:@gmao/partage=../shared/src/index.ts --outfile=dist/index.js && npm run build:cli",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "migrer": "tsx src/cli/migrer.ts",
-    "seed": "tsx src/cli/seed.ts",
-    "verifier-mapping": "tsx src/cli/verifier-mapping.ts",
-    "verifier-formulaires": "tsx src/cli/verifier-formulaires.ts",
-    "lier-microsoft": "tsx src/cli/lier-microsoft.ts",
-    "trouver-classeur": "tsx src/cli/trouver-classeur.ts"
+    "migrer": "node lancer.mjs migrer",
+    "seed": "node lancer.mjs seed",
+    "verifier-mapping": "node lancer.mjs verifier-mapping",
+    "verifier-formulaires": "node lancer.mjs verifier-formulaires",
+    "lier-microsoft": "node lancer.mjs lier-microsoft",
+    "trouver-classeur": "node lancer.mjs trouver-classeur",
+    "build:cli": "esbuild src/cli/*.ts --bundle --platform=node --format=esm --target=node22 --packages=external --alias:@gmao/partage=../shared/src/index.ts --outdir=dist/cli"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.0",

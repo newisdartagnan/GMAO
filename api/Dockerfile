@@ -38,6 +38,10 @@ RUN npm ci --omit=dev --workspace=@gmao/api --workspace=@gmao/partage --include-
 
 COPY --from=build /app/api/dist ./api/dist
 COPY api/migrations ./api/migrations
+# Le lanceur des commandes d'administration : il choisit le paquet compilé,
+# faute de sources et de tsx dans cette image.
+COPY api/lancer.mjs ./api/lancer.mjs
+COPY api/package.json ./api/package.json
 
 # Le serveur ne tourne pas en root : une faille applicative ne doit pas
 # donner les pleins pouvoirs sur le conteneur.
