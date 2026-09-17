@@ -561,6 +561,43 @@ Il n'y a plus qu'à copier la ligne. `lier-microsoft` affiche la même liste
 quand `MSFORMS_CLASSEUR` n'est pas encore renseigné, ou quand la valeur
 donnée ne mène nulle part.
 
+#### Si la liste est vide
+
+`trouver-classeur` ne montre que ce que le compte autorisé peut lire. Une
+liste vide veut dire l'une de deux choses.
+
+**Le classeur ne vous a pas été partagé.** C'est le cas le plus courant quand
+le formulaire appartient à quelqu'un d'autre. Le propriétaire doit, depuis son
+OneDrive : clic droit sur le classeur des réponses → **Partager** → saisir
+votre adresse → régler sur **Peut afficher** → Envoyer. Le fichier apparaît
+alors dans votre *Partagés avec moi*, et `trouver-classeur` le voit.
+
+**Vous vous êtes autorisé avec le mauvais compte.** `lier-microsoft` affiche
+en tête le compte qu'il vient de lier ; relancez-le et connectez-vous avec
+celui qui voit le classeur.
+
+En dernier recours, la référence se relève à la main dans
+[Graph Explorer](https://developer.microsoft.com/graph/graph-explorer),
+connecté avec le compte autorisé :
+
+```
+GET https://graph.microsoft.com/v1.0/me/drive/sharedWithMe
+```
+
+Dans la réponse, repérer l'entrée dont `remoteItem.name` est le classeur des
+réponses, puis composer :
+
+```
+MSFORMS_CLASSEUR=drive:<remoteItem.parentReference.driveId>:item:<remoteItem.id>
+```
+
+Pour un classeur qui est dans votre propre OneDrive, c'est plus court :
+
+```
+GET https://graph.microsoft.com/v1.0/me/drive/root/search(q='Formulaire')
+MSFORMS_CLASSEUR=item:<id>
+```
+
 Cinq écritures sont acceptées :
 
 ```
