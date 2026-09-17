@@ -107,14 +107,26 @@ vert "✔ $(echo "$attendues" | wc -l | tr -d ' ') migration(s), toutes appliqu�
 titre "5. Commandes d'administration"
 # Vérifier qu'un script figure au package.json ne prouve rien : il peut y
 # être et ne pas pouvoir s'exécuter, faute de l'outil qu'il appelle. On le
-# lance donc pour de vrai — « lancer.mjs » sans argument se contente
-# d'afficher son usage et de sortir.
-if compose exec -T api node api/lancer.mjs 2>&1 | grep -q 'Usage'; then
-  vert "✔ Les commandes d'administration répondent"
+# lance donc pour de vrai.
+#
+# La sortie est capturée avant d'être filtrée : sous « pipefail », un grep
+# qui trouve ne suffit pas à rendre le tube heureux si la commande en amont
+# sort en erreur — ce qui faisait annoncer une panne sur un conteneur sain.
+inventaire="$(compose exec -T api node api/lancer.mjs --liste 2>&1 || true)"
+
+if printf '%s' "$inventaire" | grep -q '^ok '; then
+  printf '%s' "$inventaire" | while IFS= read -r ligne; do
+    case "$ligne" in
+      ok*) vert "✔ ${ligne#ok }" ;;
+      --*) orange "◦ ${ligne#-- } (absente de l’image)" ;;
+    esac
+  done
+  echo
   echo "    docker compose exec api npm run lier-microsoft   --workspace=api"
   echo "    docker compose exec api npm run trouver-classeur --workspace=api"
 else
   rouge "✘ Les commandes d'administration ne répondent pas dans le conteneur."
+  printf '%s\n' "$inventaire" | sed 's/^/     /' | head -5
   echo "   Image trop ancienne : docker compose build --no-cache api && docker compose up -d api"
   exit 1
 fi
