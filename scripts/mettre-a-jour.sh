@@ -115,7 +115,9 @@ titre "5. Commandes d'administration"
 inventaire="$(compose exec -T api node api/lancer.mjs --liste 2>&1 || true)"
 
 if printf '%s' "$inventaire" | grep -q '^ok '; then
-  printf '%s' "$inventaire" | while IFS= read -r ligne; do
+  # « printf %s » ne termine pas la dernière ligne, et « read » la jette :
+  # la dernière commande de l'inventaire disparaissait de l'affichage.
+  printf '%s\n' "$inventaire" | while IFS= read -r ligne; do
     case "$ligne" in
       ok*) vert "✔ ${ligne#ok }" ;;
       --*) orange "◦ ${ligne#-- } (absente de l’image)" ;;
