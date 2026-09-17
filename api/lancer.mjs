@@ -35,6 +35,7 @@ const COMMANDES = [
   'verifier-formulaires',
   'lier-microsoft',
   'trouver-classeur',
+  'etat-connecteur',
 ];
 
 /**

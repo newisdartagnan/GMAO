@@ -716,6 +716,45 @@ fausserait les statistiques.
 Charger les sites, bâtiments et locaux réels est donc le premier travail :
 voir **Reprendre la base à la main**.
 
+### Ai-je déjà reçu des demandes ?
+
+```bash
+docker compose exec api npm run etat-connecteur --workspace=api
+```
+
+La question n'a pas de réponse évidente à l'écran : l'application affiche des
+centaines de demandes, mais la plupart viennent du jeu de démonstration.
+Cette commande ne compte que celles du formulaire, et dit **pourquoi** quand
+il n'y en a aucune — connecteur pas autorisé, classeur non renseigné,
+dernière lecture en échec, ou simplement rien de nouveau.
+
+```
+Connecteur
+──────────
+  Fournisseur             microsoft
+  Acheminement            classeur Excel
+  Autorisation            accordée le 2026-09-17 15:35
+  Classeur                drive:b!…:item:01…
+  Dernière lecture        2026-09-17 15:35
+  Repère de lecture       2
+
+Demandes venues du formulaire
+─────────────────────────────
+  Reçues en tout          2
+  À qualifier             2
+  Sans équipement         2
+
+  Les plus récentes :
+    DI-2026-00508  2026-08-26 09:40  Souffle chaud, bruit de ferraille
+    DI-2026-00507  2026-08-26 07:12  Sifflement au raccord mural
+
+  506 autre(s) demande(s) dans la base, qui ne viennent pas du formulaire
+  (jeu de démonstration ou saisies faites dans l'application).
+```
+
+Les mêmes chiffres figurent dans **Paramètres → Formulaire externe**, et dans
+la file des demandes, celles venues du formulaire portent un pictogramme.
+
 ### Surveiller et rattraper
 
 **Paramètres → Formulaire externe** montre l'état du connecteur, la dernière
