@@ -12,8 +12,22 @@
 set -u
 
 ENV_FICHIER="${1:-.env}"
-manques=0
+
+# Deux sortes de manques, qui n'ont pas les mêmes conséquences :
+#
+#   bloquants    « docker compose up » échouera. Rien ne démarre.
+#   incomplets   la pile démarre, le connecteur ne collecte pas.
+#
+# La distinction n'est pas cosmétique : plusieurs réglages du connecteur ne
+# peuvent être connus qu'APRÈS avoir reconstruit et autorisé la GMAO —
+# MSFORMS_CLASSEUR se découvre en interrogeant Microsoft. Les traiter comme
+# bloquants interdisait la reconstruction qui, seule, permet de les obtenir.
+bloquants=0
+incomplets=0
 avertissements=0
+
+# Section courante, qui décide du compteur incrémenté par « exiger ».
+section=bloquant
 
 rouge()  { printf '\033[31m%s\033[0m\n' "$*"; }
 orange() { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -31,15 +45,23 @@ lire() {
   sed -n "s/^[[:space:]]*$1=//p" "$ENV_FICHIER" | tail -1 | sed 's/[[:space:]]*$//'
 }
 
+compter() {
+  if [ "$section" = "bloquant" ]; then bloquants=$((bloquants + 1)); else incomplets=$((incomplets + 1)); fi
+}
+
 exiger() {
   local nom="$1" role="$2" minimum="${3:-1}"
   local valeur; valeur="$(lire "$nom")"
   if [ -z "$valeur" ]; then
-    rouge "✘ $nom est vide — $role"
-    manques=$((manques + 1))
+    if [ "$section" = "bloquant" ]; then rouge "✘ $nom est vide — $role"; else orange "◦ $nom est vide — $role"; fi
+    compter
   elif [ "${#valeur}" -lt "$minimum" ]; then
-    rouge "✘ $nom fait ${#valeur} caractères, $minimum au minimum — $role"
-    manques=$((manques + 1))
+    if [ "$section" = "bloquant" ]; then
+      rouge "✘ $nom fait ${#valeur} caractères, $minimum au minimum — $role"
+    else
+      orange "◦ $nom fait ${#valeur} caractères, $minimum au minimum — $role"
+    fi
+    compter
   else
     vert "✔ $nom"
   fi
@@ -63,6 +85,7 @@ exiger DB_PASSWORD "mot de passe du compte PostgreSQL de l'application" 8
 exiger JWT_SECRET  "clé de signature des sessions" 16
 
 echo
+section=connecteur
 echo "Profil « admin » — docker compose --profile admin up -d"
 echo "-------------------------------------------------------"
 conseiller PGADMIN_PASSWORD "sans lui, pgAdmin refuse de démarrer (Adminer, lui, fonctionne)"
@@ -83,7 +106,7 @@ case "${source_formulaire:-aucune}" in
         # Laissé pour mémoire : les quatre formes valides commencent toutes
         # par un préfixe. Un chemin nu est l'erreur la plus fréquente.
         *) rouge "✘ MSFORMS_CLASSEUR doit commencer par me: / item: / drive: / site:"
-           manques=$((manques + 1)) ;;
+           compter ;;
       esac
       if [ "$(lire MSFORMS_AUTH)" = "application" ]; then
         exiger MSFORMS_TENANT_ID "identifiant du locataire Microsoft 365" 10
@@ -135,19 +158,23 @@ case "${source_formulaire:-aucune}" in
 esac
 
 echo
-if [ "$manques" -gt 0 ]; then
-  # DB_PASSWORD et JWT_SECRET arrêtent Compose lui-même ; les autres
-  # n'empêchent que le connecteur de fonctionner. Le dire tel quel évite de
-  # chercher une panne de démarrage qui n'existe pas.
-  if [ -z "$(lire DB_PASSWORD)" ] || [ -z "$(lire JWT_SECRET)" ]; then
-    rouge "$manques réglage(s) à corriger, dont un indispensable : « docker compose up » échouera."
-  else
-    rouge "$manques réglage(s) à corriger — la pile démarrera, le connecteur ne fonctionnera pas."
-  fi
+if [ "$bloquants" -gt 0 ]; then
+  rouge "$bloquants réglage(s) indispensable(s) manquant(s) : « docker compose up » échouera."
   exit 1
 fi
+
+if [ "$incomplets" -gt 0 ]; then
+  orange "La pile démarrera. Le connecteur ne collectera pas tant que les"
+  orange "$incomplets réglage(s) ci-dessus ne sont pas renseignés — plusieurs"
+  orange "d'entre eux ne s'obtiennent qu'une fois la pile reconstruite."
+  # Sortie 2, et non 1 : « mettre-a-jour.sh » doit pouvoir reconstruire malgré
+  # un connecteur incomplet, puisque c'est la reconstruction qui donne accès
+  # aux commandes permettant de le compléter.
+  exit 2
+fi
+
 if [ "$avertissements" -gt 0 ]; then
-  orange "Rien ne bloque le démarrage ; $avertissements option(s) non utilisée(s)."
+  orange "Rien ne bloque ; $avertissements option(s) non utilisée(s)."
 else
   vert "Configuration complète."
 fi
