@@ -17,7 +17,8 @@
     "lier-microsoft": "node lancer.mjs lier-microsoft",
     "trouver-classeur": "node lancer.mjs trouver-classeur",
     "build:cli": "esbuild src/cli/*.ts --bundle --platform=node --format=esm --target=node22 --packages=external --alias:@gmao/partage=../shared/src/index.ts --outdir=dist/cli",
-    "etat-connecteur": "node lancer.mjs etat-connecteur"
+    "etat-connecteur": "node lancer.mjs etat-connecteur",
+    "lire-classeur": "node lancer.mjs lire-classeur"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.0",

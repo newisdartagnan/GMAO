@@ -36,6 +36,7 @@ const COMMANDES = [
   'lier-microsoft',
   'trouver-classeur',
   'etat-connecteur',
+  'lire-classeur',
 ];
 
 /**
