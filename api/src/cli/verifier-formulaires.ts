@@ -518,6 +518,29 @@ verifier('aucun critère, aucune proposition', suggererEquipements(base, {}), []
 }
 
 /* ================================================================== */
+console.log('\nMessages d’erreur d’Entra ID');
+
+{
+  // Les codes AADSTS sont indexés par la documentation Microsoft, mais leur
+  // libellé ne dit pas quoi régler. Le banc vérifie qu'on répond par un geste.
+  const cas: [string, RegExp][] = [
+    ['AADSTS70002: The client application must be marked as \'mobile.\'', /flux client publics/],
+    ['AADSTS7000218: The request body must contain client_secret.', /client public/],
+    ['AADSTS9002331: Application is not configured as multi-tenant.', /signInAudience/],
+    ['AADSTS70000: The refresh token has expired.', /lier-microsoft/],
+  ];
+  for (const [brut, attendu] of cas) {
+    const code = /AADSTS\d+/.exec(brut)![0];
+    verifier(`${code} → geste à faire`, attendu.test(microsoft.messageErreurPourEssai(brut, 400)), true);
+  }
+  verifier(
+    'code inconnu : le message brut est conservé',
+    microsoft.messageErreurPourEssai('AADSTS99999: quelque chose', 400),
+    'AADSTS99999: quelque chose (HTTP 400)',
+  );
+}
+
+/* ================================================================== */
 console.log('\nQR code des étiquettes');
 
 verifier(
