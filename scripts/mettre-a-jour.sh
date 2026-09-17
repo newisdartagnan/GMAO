@@ -126,6 +126,8 @@ if printf '%s' "$inventaire" | grep -q '^ok '; then
   echo
   echo "    docker compose exec api npm run lier-microsoft   --workspace=api"
   echo "    docker compose exec api npm run trouver-classeur --workspace=api"
+  echo "    docker compose exec api npm run lire-classeur    --workspace=api"
+  echo "    docker compose exec api npm run etat-connecteur  --workspace=api"
 else
   rouge "✘ Les commandes d'administration ne répondent pas dans le conteneur."
   printf '%s\n' "$inventaire" | sed 's/^/     /' | head -5
@@ -139,3 +141,6 @@ echo "Interface : http://localhost:${port:-8080}"
 echo
 echo "Si le connecteur Microsoft n’est pas encore autorisé :"
 echo "    docker compose exec api npm run lier-microsoft --workspace=api"
+echo
+echo "Pour voir ce que la GMAO lit vraiment dans le classeur, sans rien importer :"
+echo "    docker compose exec api npm run lire-classeur --workspace=api"

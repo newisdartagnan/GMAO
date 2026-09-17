@@ -636,5 +636,45 @@ verifier(
   { 'Problème constaté': 'X' },
 );
 
+/* ================================================================== */
+console.log('\nClasseur rendu en plusieurs pages par Graph');
+
+{
+  // Graph coupe les grands tableaux et laisse un « @odata.nextLink ». Ne pas
+  // le suivre ne lève aucune erreur : la collecte voit simplement moins de
+  // lignes qu'il n'y en a, et les réponses récentes n'arrivent jamais.
+  const pages: Record<string, unknown> = {
+    'rows': { value: [{ values: [['1']] }], '@odata.nextLink': 'rows?$skip=1' },
+    'rows?$skip=1': { value: [{ values: [['2']] }], '@odata.nextLink': 'rows?$skip=2' },
+    'rows?$skip=2': { value: [{ values: [['3']] }] },
+  };
+  const visitees: string[] = [];
+  const appeler = async (url: string) => {
+    visitees.push(url);
+    return (pages[url] ?? { value: [] }) as Record<string, unknown>;
+  };
+
+  const lues = await microsoft.toutesLesLignes(appeler, 'rows');
+  verifier('les trois pages sont suivies', visitees.length, 3);
+  verifier(
+    'les lignes de toutes les pages sont rendues',
+    lues.map((l) => l.values?.[0]?.[0]),
+    ['1', '2', '3'],
+  );
+}
+
+{
+  // Un lien qui se renvoie à lui-même ferait tourner la collecte sans fin.
+  const appeler = async () => ({ value: [{ values: [['x']] }], '@odata.nextLink': 'boucle' });
+  const lues = await microsoft.toutesLesLignes(appeler, 'boucle', 4);
+  verifier('une boucle de liens est bornée', lues.length, 4);
+}
+
+{
+  const appeler = async () => ({ value: [{ values: [['seule']] }] });
+  const lues = await microsoft.toutesLesLignes(appeler, 'rows');
+  verifier('une seule page reste une seule page', lues.length, 1);
+}
+
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);
 process.exit(echecs === 0 ? 0 : 1);

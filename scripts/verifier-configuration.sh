@@ -146,7 +146,22 @@ case "${source_formulaire:-aucune}" in
         orange "  Mettez Files.Read.All, puis relancez lier-microsoft."
         avertissements=$((avertissements + 1))
       fi
-      if true; then :
+      # Un identifiant de driveItem fait une quinzaine de caractères, parfois
+      # bien plus. « item:2 » est un numéro de ligne, ou une copie qui s'est
+      # arrêtée trop tôt : Graph répond alors « 404 / ItemNotFound », ce qui
+      # se lit comme une panne de droits alors que c'est la référence.
+      classeur="$(lire MSFORMS_CLASSEUR)"
+      identifiant=""
+      case "$classeur" in
+        drive:*:item:*) identifiant="${classeur##*:item:}" ;;
+        item:*)         identifiant="${classeur#item:}" ;;
+      esac
+      if [ -n "$identifiant" ] && [ "${#identifiant}" -lt 8 ]; then
+        orange "• MSFORMS_CLASSEUR se termine par « $identifiant », trop court pour un"
+        orange "  identifiant de fichier OneDrive — il en fait une quinzaine de"
+        orange "  caractères. Relevez la référence entière plutôt que de la saisir :"
+        orange "    docker compose exec api npm run trouver-classeur --workspace=api"
+        avertissements=$((avertissements + 1))
       fi
     else
       exiger FORMULAIRE_SECRET_WEBHOOK "secret attendu sur l'appel entrant" 16
