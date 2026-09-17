@@ -1,6 +1,31 @@
 /** Configuration lue une seule fois au démarrage, avec des défauts de développement. */
 
+/**
+ * Valeur d'environnement, débarrassée des blancs qui l'entourent.
+ *
+ * Un fichier `.env` rédigé sous Windows se termine en CRLF, et le retour
+ * chariot reste collé à la fin de chaque valeur. Il ne se voit pas : la
+ * chaîne reste « vraie », tous les contrôles de présence passent, et le
+ * défaut ne joue pas. Il ressort plus loin, transformé en « %0D » dans une
+ * URL — un identifiant de fichier parfaitement valide devient alors
+ * introuvable, sur un « 404 » qui n'explique rien.
+ */
 function lire(nom: string, defaut?: string): string {
+  const v = process.env[nom] ?? defaut;
+  if (v === undefined) throw new Error(`Variable d'environnement manquante : ${nom}`);
+  return v.trim();
+}
+
+/**
+ * Valeur laissée telle quelle, octet pour octet.
+ *
+ * Réservée à ce que consomme aussi un AUTRE conteneur depuis le même
+ * fichier. Le mot de passe de PostgreSQL en est : la base a été initialisée
+ * avec la valeur telle que Compose la lui a passée, retour chariot compris.
+ * La nettoyer ici seulement ferait diverger les deux lectures, et l'API ne
+ * pourrait plus se connecter à sa propre base.
+ */
+function lireBrut(nom: string, defaut?: string): string {
   const v = process.env[nom] ?? defaut;
   if (v === undefined) throw new Error(`Variable d'environnement manquante : ${nom}`);
   return v;
@@ -14,9 +39,10 @@ export const config = {
   bdd: {
     hote: lire('DB_HOST', 'localhost'),
     port: Number(lire('DB_PORT', '5432')),
-    base: lire('DB_NAME', 'gmao'),
-    utilisateur: lire('DB_USER', 'gmao'),
-    motDePasse: lire('DB_PASSWORD', 'gmao'),
+    // Ces trois-là servent aussi au conteneur PostgreSQL : voir lireBrut.
+    base: lireBrut('DB_NAME', 'gmao'),
+    utilisateur: lireBrut('DB_USER', 'gmao'),
+    motDePasse: lireBrut('DB_PASSWORD', 'gmao'),
     /** Nombre maximal de connexions ouvertes par le pool. */
     poolMax: Number(lire('DB_POOL_MAX', '10')),
   },
