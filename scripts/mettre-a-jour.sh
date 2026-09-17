@@ -96,15 +96,20 @@ fi
 vert "✔ $(echo "$attendues" | wc -l | tr -d ' ') migration(s), toutes appliquées"
 
 # ---------------------------------------------------------------------
-titre "5. Commandes disponibles"
-# Un script absent du conteneur trahit lui aussi une image périmée.
-for commande in lier-microsoft verifier-formulaires verifier-mapping; do
-  if compose exec -T api npm run --workspace=api 2>/dev/null | tr -d '\r' | grep -qE "^[[:space:]]+${commande}\$"; then
-    vert "✔ npm run $commande"
-  else
-    orange "• npm run $commande absent de l’image"
-  fi
-done
+titre "5. Commandes d'administration"
+# Vérifier qu'un script figure au package.json ne prouve rien : il peut y
+# être et ne pas pouvoir s'exécuter, faute de l'outil qu'il appelle. On le
+# lance donc pour de vrai — « lancer.mjs » sans argument se contente
+# d'afficher son usage et de sortir.
+if compose exec -T api node api/lancer.mjs 2>&1 | grep -q 'Usage'; then
+  vert "✔ Les commandes d'administration répondent"
+  echo "    docker compose exec api npm run lier-microsoft   --workspace=api"
+  echo "    docker compose exec api npm run trouver-classeur --workspace=api"
+else
+  rouge "✘ Les commandes d'administration ne répondent pas dans le conteneur."
+  echo "   Image trop ancienne : docker compose build --no-cache api && docker compose up -d api"
+  exit 1
+fi
 
 titre "Terminé"
 port="$(sed -n 's/^[[:space:]]*WEB_PORT=//p' .env 2>/dev/null | tail -1 | tr -d '\r')"
