@@ -15,14 +15,46 @@ import { fileURLToPath } from 'node:url';
  *
  * Appeler « tsx » directement marchait donc en développement et échouait dans
  * le conteneur, sur un « tsx: not found » qui ne dit pas pourquoi. Ce lanceur
- * choisit : le paquet compilé s'il est là, les sources sinon.
+ * choisit.
+ *
+ * Il préfère les SOURCES quand elles sont là, et ne se rabat sur le paquet
+ * compilé qu'à défaut. L'ordre inverse paraissait plus naturel — le compilé
+ * d'abord — mais il fait tourner du code périmé dès qu'on modifie une source
+ * sans reconstruire, sans rien dire. En développement les sources sont
+ * présentes et font foi ; l'image de production n'en a pas, et prend le
+ * paquet.
  */
 
 const ici = dirname(fileURLToPath(import.meta.url));
 const [nom, ...arguments_] = process.argv.slice(2);
 
+const COMMANDES = [
+  'migrer',
+  'seed',
+  'verifier-mapping',
+  'verifier-formulaires',
+  'lier-microsoft',
+  'trouver-classeur',
+];
+
+/**
+ * « --liste » sert de contrôle de bonne santé : il dit ce que cette image
+ * sait faire, et sort en succès. Un appel sans argument sortait en erreur,
+ * ce qui obligeait l'appelant à distinguer « commande absente » de « usage
+ * incorrect » — distinction qu'un script shell rate facilement.
+ */
+if (nom === '--liste') {
+  for (const c of COMMANDES) {
+    const dispo =
+      existsSync(join(ici, 'src', 'cli', `${c}.ts`)) || existsSync(join(ici, 'dist', 'cli', `${c}.js`));
+    console.log(`${dispo ? 'ok ' : '-- '}${c}`);
+  }
+  process.exit(0);
+}
+
 if (!nom) {
   console.error('Usage : node lancer.mjs <commande> [arguments]');
+  console.error(`Commandes : ${COMMANDES.join(', ')}`);
   process.exit(2);
 }
 
@@ -46,15 +78,17 @@ function chercherTsx() {
 let commande;
 let parametres;
 
-if (existsSync(compile)) {
-  commande = process.execPath;
-  parametres = [compile, ...arguments_];
-} else if (existsSync(source)) {
+const tsx = existsSync(source) ? (chercherTsx() ?? 'tsx') : null;
+
+if (existsSync(source) && tsx) {
   // « npm run » met node_modules/.bin sur le PATH, mais un appel direct à
   // « node lancer.mjs » ne l'a pas : on cherche tsx dans l'arborescence avant
   // de s'en remettre au PATH.
-  commande = chercherTsx() ?? 'tsx';
+  commande = tsx;
   parametres = [source, ...arguments_];
+} else if (existsSync(compile)) {
+  commande = process.execPath;
+  parametres = [compile, ...arguments_];
 } else {
   console.error(
     `Commande « ${nom} » introuvable.\n` +
