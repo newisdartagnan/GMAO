@@ -642,6 +642,113 @@ export function lireLigneClasseur(
 }
 
 /**
+ * Toutes les lignes d'un tableau, page après page.
+ *
+ * Graph ne rend pas forcément le tableau entier d'un coup : passé quelques
+ * centaines de lignes il coupe et laisse un « @odata.nextLink ». S'arrêter à
+ * la première page se voit mal — la collecte continue de tourner, sans erreur,
+ * et cesse simplement de voir les réponses récentes. La borne n'est là que
+ * pour qu'un lien qui boucle ne fasse pas tourner la collecte sans fin.
+ */
+export async function toutesLesLignes(
+  appeler: (url: string) => Promise<Record<string, unknown>>,
+  premiere: string,
+  maxPages = 50,
+): Promise<LigneTableau[]> {
+  const lignes: LigneTableau[] = [];
+  let url: string | undefined = premiere;
+  for (let page = 0; url && page < maxPages; page += 1) {
+    const reponse: { value?: LigneTableau[]; '@odata.nextLink'?: string } = await appeler(url);
+    lignes.push(...(reponse.value ?? []));
+    url = reponse['@odata.nextLink'];
+  }
+  return lignes;
+}
+
+/** Ce qu'un classeur contient, pour le montrer avant d'en importer quoi que ce soit. */
+export interface ApercuClasseur {
+  nom?: string;
+  modifieLe?: string;
+  tableaux: string[];
+  tableauLu?: string;
+  colonnes: string[];
+  /** Colonnes écartées des réponses parce qu'elles décrivent la soumission. */
+  colonnesDeService: string[];
+  lignes: unknown[][];
+  total: number;
+}
+
+/**
+ * Regarde dans le classeur sans rien importer.
+ *
+ * Lister un fichier prouve qu'on le voit ; cela ne prouve pas qu'on sait
+ * l'ouvrir, trouver le bon tableau et lire ses lignes. Entre les deux se
+ * glissent un nom de tableau erroné, une feuille sans tableau nommé, un
+ * classeur vide. Cette lecture à blanc lève le doute avant qu'une
+ * collecte ne se taise sans raison lisible.
+ */
+export async function apercuClasseur(
+  options: OptionsGraph,
+  combien = 3,
+): Promise<ApercuClasseur> {
+  const jeton = await obtenirJeton(options);
+  const racine = options.base ?? 'https://graph.microsoft.com/v1.0';
+  const item = `${racine}${cheminClasseur(options.classeur)}`;
+
+  const appeler = async (url: string) => {
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${jeton}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) {
+      const corps = await r.text().catch(() => '');
+      throw new Error(`Microsoft Graph a répondu ${r.status} : ${corps.slice(0, 240) || 'réponse vide'}`);
+    }
+    return r.json() as Promise<Record<string, unknown>>;
+  };
+
+  // La fiche du fichier n'est qu'un ornement : le nom et la date rassurent,
+  // mais c'est le tableau qui compte. Un refus ici — un partage qui donne le
+  // contenu sans les métadonnées — ne doit pas emporter la lecture.
+  const fiche = (await appeler(item).catch(() => ({}))) as {
+    name?: string;
+    lastModifiedDateTime?: string;
+  };
+
+  const listeTables = (await appeler(`${item}/workbook/tables`)) as { value?: { name: string }[] };
+  const tableaux = (listeTables.value ?? []).map((t) => t.name);
+
+  const apercu: ApercuClasseur = {
+    nom: fiche.name,
+    modifieLe: fiche.lastModifiedDateTime,
+    tableaux,
+    colonnes: [],
+    colonnesDeService: [],
+    lignes: [],
+    total: 0,
+  };
+  if (!tableaux.length) return apercu;
+
+  // Le tableau configuré s'il existe, sinon le premier : mieux vaut montrer
+  // ce qu'il y a que refuser sur un nom qui se corrige en une ligne de .env.
+  const voulu = options.tableau ?? 'Tableau1';
+  apercu.tableauLu = tableaux.includes(voulu) ? voulu : tableaux[0];
+  const table = `${item}/workbook/tables/${encodeURIComponent(apercu.tableauLu)}`;
+
+  const entetes = (await appeler(`${table}/headerRowRange`)) as { values?: unknown[][] };
+  apercu.colonnes = (entetes.values?.[0] ?? []).map((v) => String(v ?? '').trim());
+
+  const utiles = new Set(colonnesReponses(apercu.colonnes));
+  apercu.colonnesDeService = apercu.colonnes.filter((c, i) => i === 0 || !utiles.has(c));
+
+  const toutes = (await toutesLesLignes(appeler, `${table}/rows`)).map((l) => l.values?.[0] ?? []);
+  apercu.total = toutes.length;
+  apercu.lignes = toutes.slice(-combien);
+
+  return apercu;
+}
+
+/**
  * Relit le tableau des réponses et rend les lignes postérieures au repère.
  *
  * Le repère est l'identifiant de réponse le plus élevé déjà traité. Forms
@@ -682,13 +789,13 @@ export async function recupererSoumissions(
     );
   }
 
-  const lignes = (await appeler(`${chemin}/rows`)) as { value?: LigneTableau[] };
+  const lignes = await toutesLesLignes(appeler, `${chemin}/rows`);
   const repere = depuis ? Number(depuis) : Number.NaN;
 
   const soumissions: SoumissionFormulaire[] = [];
   let maximum = Number.isNaN(repere) ? 0 : repere;
 
-  for (const ligne of lignes.value ?? []) {
+  for (const ligne of lignes) {
     const soumission = lireLigneClasseur(colonnes, ligne.values?.[0] ?? [], options.classeur);
     if (!soumission) continue;
 

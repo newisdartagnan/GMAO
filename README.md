@@ -628,6 +628,16 @@ renommage — ce que les systèmes bâtis sur Power Query interdisent souvent
 formellement, les liens entre classeurs se rompant au moindre changement de
 nom.
 
+Une fois la ligne en place, une commande dit si elle mène vraiment au bon
+classeur — nom, date de dernière modification, colonnes et dernières
+réponses, sans rien importer :
+
+```bash
+docker compose exec api npm run lire-classeur --workspace=api
+```
+
+Voir **Voir ce que contient le classeur, sans rien importer**.
+
 > **Le jeton vit en base, pas dans `.env`.** Microsoft en délivre un nouveau à
 > chaque renouvellement et invalide le précédent. S'il n'était conservé que
 > dans le fichier de configuration, la collecte s'arrêterait au premier
@@ -754,6 +764,71 @@ Demandes venues du formulaire
 
 Les mêmes chiffres figurent dans **Paramètres → Formulaire externe**, et dans
 la file des demandes, celles venues du formulaire portent un pictogramme.
+
+### Voir ce que contient le classeur, sans rien importer
+
+Savoir qu'on **voit** le fichier ne dit pas qu'on sait l'**ouvrir**. Entre les
+deux se glissent un nom de tableau erroné, une feuille sans tableau nommé, un
+partage qui donne le nom du fichier mais pas son contenu. Cette lecture à
+blanc tranche : elle montre les colonnes réelles, les dernières réponses, et
+ce que la GMAO en ferait — sans écrire une ligne en base.
+
+```bash
+docker compose exec api npm run lire-classeur --workspace=api
+```
+
+```
+Classeur
+────────
+  Référence     drive:b!…:item:01…
+  Nom           Formularie manteinance – Hôpital Monkole.xlsx
+  Modifié le    2026-09-16 14:24
+
+Tableaux
+────────
+  Tableau1 ← lu
+
+Colonnes (10)
+─────────────
+   1  Id_formulaire                     · colonne de service
+   2  Date de plainté                   · colonne de service
+   3  Nom du demandeur
+   …
+
+Réponses (2 en tout, 2 affichée(s))
+───────────────────────────────────
+
+  ── réponse 1 ─────────────────────────────
+     Nom du demandeur                Béatrice Ilunga
+     Secteur                         Gaz Médicaux
+     Lieu                            MKL2
+     Salle de lieu                   Bloc opératoire
+     Équipement                      prise murale oxygène
+     Description du problème         Sifflement au raccord mural.
+     Priorité                        Haute
+     →
+     devient                         Sifflement au raccord mural
+     priorité                        P1 — Vitale · risque vital
+     service                         MKL2
+     corps de métier                 Fluides médicaux
+     équipement                      aucun — à rapprocher à l'écran
+
+Rien n'a été écrit.
+```
+
+La date « Modifié le » est la preuve la plus directe : si elle correspond à
+la dernière saisie faite dans le formulaire, la chaîne tient de bout en bout.
+
+Ce que la commande dit quand ça ne va pas :
+
+| Ce qui s'affiche | Ce qu'il faut faire |
+|---|---|
+| `La GMAO n'est pas autorisée` | `npm run lier-microsoft --workspace=api` |
+| `MSFORMS_CLASSEUR n'est pas renseigné` | `npm run trouver-classeur --workspace=api`, puis recopier la ligne rendue |
+| `404 / ItemNotFound` | la référence ne désigne rien : la relever avec `trouver-classeur`, sans la saisir à la main |
+| `Aucun tableau nommé dans ce classeur` | ouvrir le classeur, sélectionner la plage des réponses, Insertion → Tableau |
+| `MSFORMS_TABLEAU vaut « X », absent du classeur` | mettre le nom proposé dans `.env` |
+| `Le tableau est vide` | aucune réponse reçue, ou ce n'est pas le bon tableau |
 
 ### Surveiller et rattraper
 
