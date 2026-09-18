@@ -98,8 +98,8 @@ const MONKOLE = {
     r.demande?.objet,
     'Le climatiseur souffle chaud et fait un bruit de ferraille',
   );
-  verifier('« Haute » → P1', r.demande?.urgenceDeclaree, 'P1');
-  verifier('« Haute » → risque vital', r.demande?.impactPatient, 'risque_vital');
+  verifier('« Haute » → P2, pas P1', r.demande?.urgenceDeclaree, 'P2');
+  verifier('sans question sur l’impact, aucun risque vital inventé', r.demande?.impactPatient, 'gene');
   verifier(
     'ancienneté, secteur, déclarant et lieu conservés dans la description',
     r.demande?.description,
@@ -139,13 +139,19 @@ const MONKOLE = {
 }
 
 {
+  // Le formulaire de Monkole n'offre que Haute / Moyenne / Basse et ne
+  // demande rien sur les conséquences pour le patient. L'impact attendu est
+  // donc « gene » partout sauf là où quelqu'un a écrit le mot : le déduire de
+  // l'urgence déclarée revenait à faire dire au demandeur ce qu'il n'a pas
+  // dit — et faisait arriver l'intégralité de la file en risque vital.
   const cas: [string, string, string][] = [
-    ['Haute', 'P1', 'risque_vital'],
+    ['Haute', 'P2', 'gene'],
     ['Moyenne', 'P3', 'gene'],
     ['Basse', 'P4', 'gene'],
     ['Urgence vitale', 'P1', 'risque_vital'],
-    ['Urgent', 'P2', 'report_soin'],
+    ['Urgent', 'P2', 'gene'],
     ['Quand possible', 'P4', 'gene'],
+    ['Panne critique', 'P1', 'risque_vital'],
   ];
   for (const [texte, priorite, impact] of cas) {
     const r = convertirSoumission(
@@ -279,7 +285,7 @@ console.log('\nWebhook Power Automate');
   verifier('identifiant de réponse repris', lu?.id, '412');
   verifier('date française convertie', lu?.date, '2026-08-26T14:30:00');
   const r = lu ? convertirSoumission(base, lu, correspondance, porteur) : undefined;
-  verifier('converti en P1', r?.demande?.urgenceDeclaree, 'P1');
+  verifier('converti en P2', r?.demande?.urgenceDeclaree, 'P2');
   verifier('date de la demande', r?.demande?.dateCreation, '2026-08-26T14:30:00');
 }
 
@@ -344,7 +350,7 @@ console.log('\nClasseur réel de Monkole — colonnes telles qu’elles sont');
 
   const r = s ? convertirSoumission(base, s, correspondance, porteur) : undefined;
   verifier('objet tiré de la description', r?.demande?.objet, 'Sifflement continu au raccord mural');
-  verifier('« Haute » → P1', r?.demande?.urgenceDeclaree, 'P1');
+  verifier('« Haute » → P2', r?.demande?.urgenceDeclaree, 'P2');
   verifier(
     '« Date de dèbut du probleme » lue comme ancienneté, pas comme objet',
     r?.demande?.description,
@@ -709,6 +715,68 @@ console.log('\nPannes réseau traduites en gestes');
     'panne inconnue : le message reste, avec son code',
     raisonReseau(Object.assign(new Error('quelque chose'), { code: 'EWEIRD' })),
     'quelque chose (EWEIRD)',
+  );
+}
+
+/* ================================================================== */
+console.log('\nChoix du tableau des réponses');
+
+{
+  // Le nom du tableau varie d'un classeur à l'autre — « Tableau1 » sur un
+  // classeur laissé tel quel, « Repostes » sur celui de Monkole. La collecte
+  // échouait sur un 404 là où l'aperçu se rabattait déjà sur le premier : les
+  // deux montraient alors des choses différentes, ce qui est pire qu'un refus.
+  const tables = (noms: string[]) => async () => ({ value: noms.map((name) => ({ name })) });
+
+  verifier(
+    'nom exact : celui-là',
+    await microsoft.resoudreTableau(tables(['Tableau1', 'Repostes']), '', 'Repostes'),
+    'Repostes',
+  );
+  verifier(
+    'nom erroné, un seul tableau : pas d’ambiguïté',
+    await microsoft.resoudreTableau(tables(['Repostes']), '', 'Tableau1'),
+    'Repostes',
+  );
+
+  let refus = '';
+  try {
+    await microsoft.resoudreTableau(tables(['Repostes', 'Archive']), '', 'Tableau1');
+  } catch (e) {
+    refus = (e as Error).message;
+  }
+  verifier('nom erroné, plusieurs tableaux : refus', /Repostes, Archive/.test(refus), true);
+
+  refus = '';
+  try {
+    await microsoft.resoudreTableau(tables([]), '', 'Tableau1');
+  } catch (e) {
+    refus = (e as Error).message;
+  }
+  verifier('aucun tableau : le geste à faire', /Insertion → Tableau/.test(refus), true);
+}
+
+/* ================================================================== */
+console.log('\nDates rangées par Excel sous forme de nombre');
+
+{
+  // Une question datée remplie par Forms arrive comme un nombre de jours
+  // depuis 1899. « 46274 » dans une demande ne dit rien à un technicien — et
+  // ne dit même pas qu'il s'agit d'une date.
+  const COLONNES = ['Id', 'Date de plainté', 'Date de dèbut du probleme', 'Description du problème'];
+  const lire = (v: unknown, colonne = 'Date de dèbut du probleme') =>
+    microsoft.lireLigneClasseur(COLONNES, ['1', '16/09/2026 08:00', v, v], 'c')
+      ?.reponses.find((r) => r.libelle === colonne)?.valeur;
+
+  verifier('série Excel rendue lisible', lire(46274), '09/09/2026');
+  verifier('série en texte aussi', lire('46274'), '09/09/2026');
+  verifier('texte libre intact', lire('depuis 3 jours'), 'depuis 3 jours');
+  verifier('nombre hors plage : pas une date', lire('12'), '12');
+  verifier('date déjà écrite : intacte', lire('16/09/2026'), '16/09/2026');
+  verifier(
+    'colonne non datée : le nombre reste un nombre',
+    lire(46274, 'Description du problème'),
+    '46274',
   );
 }
 
