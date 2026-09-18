@@ -67,6 +67,18 @@ try {
         'saisir à la main :\n' +
         '    npm run trouver-classeur --workspace=api\n',
     );
+  } else if (/Impossible de joindre/.test(raison)) {
+    // Rien n'est parti : c'est la sortie du conteneur, pas la configuration
+    // du connecteur. Le contrôle tient en une ligne, depuis le conteneur
+    // lui-même — le faire depuis la machine hôte ne prouverait rien.
+    console.error(
+      'La GMAO n’a pas pu sortir du conteneur. Rien à voir avec le classeur :\n' +
+        'la configuration Microsoft n’a même pas été soumise.\n\n' +
+        '  docker compose exec api node -e "fetch(\'https://login.microsoftonline.com\')' +
+        '.then(r=>console.log(r.status)).catch(e=>console.log(e.cause?.code??e.message))"\n\n' +
+        'Si cela répond un code plutôt qu’un nombre, la cause est en amont de la\n' +
+        'GMAO : DNS du démon Docker, pare-feu sortant, ou proxy d’entreprise.\n',
+    );
   }
   await pool.end();
   process.exit(1);

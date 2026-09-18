@@ -1,4 +1,5 @@
 import type { SoumissionFormulaire } from './formulaires.ts';
+import { joindre } from './reseau.ts';
 
 /**
  * Adaptateur JotForm.
@@ -78,7 +79,7 @@ export async function recupererSoumissions(
     parametres.set('filter', JSON.stringify({ 'created_at:gt': options.depuis }));
   }
 
-  const reponse = await fetch(`${racine}/form/${options.formulaireId}/submissions?${parametres}`, {
+  const reponse = await joindre(`${racine}/form/${options.formulaireId}/submissions?${parametres}`, {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(20_000),
   });
