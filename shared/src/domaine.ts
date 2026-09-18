@@ -388,6 +388,18 @@ export interface OrigineExterne {
   formulaireId?: string;
   soumissionId: string;
   recuLe: ISODate;
+  /**
+   * Le nom que le demandeur a écrit, tel quel.
+   *
+   * La demande est portée par un compte de service — « Eugénie » n'a pas de
+   * compte dans la GMAO, et lui en créer un à chaque signalement peuplerait
+   * l'annuaire de fantômes. Mais afficher le compte de service dans la
+   * colonne « Demandeur » donne le nom de quelqu'un qui n'a rien demandé, et
+   * trois signalements de trois personnes se ressemblent alors comme trois
+   * gouttes d'eau. Le nom déclaré est donc conservé à part, et c'est lui
+   * qu'on montre.
+   */
+  declarant?: string;
   reponses: Record<string, string>;
 }
 

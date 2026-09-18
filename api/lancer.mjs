@@ -37,6 +37,7 @@ const COMMANDES = [
   'trouver-classeur',
   'etat-connecteur',
   'lire-classeur',
+  'purger-externes',
 ];
 
 /**
