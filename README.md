@@ -748,12 +748,17 @@ mais c'est le **nom écrit sur le formulaire** qui s'affiche dans la colonne
 
 ```
 Herdie Vita
-formulaire · via Céline Tshibangu
+déclaré sur le formulaire
 ```
 
 Sans cela, tous les signalements portaient le même nom — celui de quelqu'un
 qui n'avait rien demandé — et trois demandes de trois services devenaient
 indiscernables dans la liste.
+
+Le compte porteur n'est **pas** nommé à l'écran : il désigne une personne qui
+n'a rien demandé, que le lecteur ne connaît pas, et le citer ne fait
+qu'embrouiller. Il reste consultable dans le journal d'audit, où il a sa
+place.
 
 Si le nom déclaré correspond à un utilisateur de l'annuaire (nom complet,
 courriel ou téléphone), la demande lui revient directement et il apparaît
@@ -798,6 +803,23 @@ d'elle-même le mot qui nomme la salle avant de comparer :
 
 Le service suit la chambre : une demande qui dit « Ch 104 » arrive en
 Chirurgie, sans que personne ait à le préciser.
+
+### « métier suggéré » — à quoi sert ce badge
+
+Sur une demande venue du formulaire, un badge annonce par exemple
+« métier suggéré · Technique / bâtiment ». Ce n'est pas une catégorie de la
+demande : c'est **l'équipe présélectionnée** au moment de cliquer
+« Transformer en OT ».
+
+Il est déduit du secteur coché sur le formulaire, et des mots de la demande
+quand le secteur ne suffit pas — « Autres » ne dit rien, « robinet qui fuit »
+dit tout. Il **ne décide de rien** : le responsable peut en changer à la
+création de l'ordre de travail, et le domaine de l'équipement, une fois
+celui-ci rattaché, l'emporte sur le secteur déclaré.
+
+Son intérêt est de faire gagner un aller-retour : sans lui, chaque demande
+arrive sans équipe, et il faut relire la description pour deviner s'il s'agit
+de plomberie, d'électricité ou de biomédical.
 
 ### Le rattachement dépend du référentiel
 

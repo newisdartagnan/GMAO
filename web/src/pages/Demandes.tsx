@@ -237,8 +237,17 @@ export function PageDemandes() {
                 <Badge ton="neutre">reçue par {selection.canal.replace(/_/g, ' ')}</Badge>
               )}
               {selection.domaineSuggere && (
-                <Badge ton={DOMAINE[selection.domaineSuggere].ton}>
-                  {DOMAINE[selection.domaineSuggere].libelle}
+                // Sans intitulé, « Technique / bâtiment » ne dit pas ce qu'il
+                // fait là : on le lit comme une catégorie de la demande, alors
+                // que c'est une proposition d'équipe pour l'ordre de travail.
+                <Badge
+                  ton={DOMAINE[selection.domaineSuggere].ton}
+                  titre={
+                    'Corps de métier déduit du secteur indiqué sur le formulaire et des mots de la demande. ' +
+                    'Il présélectionne l’équipe au moment de créer l’ordre de travail — vous pouvez en changer.'
+                  }
+                >
+                  métier suggéré · {DOMAINE[selection.domaineSuggere].libelle}
                 </Badge>
               )}
             </div>
@@ -256,7 +265,7 @@ export function PageDemandes() {
                 {
                   label: 'Demandeur',
                   valeur: selection.origineExterne?.declarant ? (
-                    <Declarant nom={selection.origineExterne.declarant} viaCompte={selection.demandeurId} />
+                    <Declarant nom={selection.origineExterne.declarant} />
                   ) : (
                     <NomUtilisateur id={selection.demandeurId} avecRole />
                   ),
