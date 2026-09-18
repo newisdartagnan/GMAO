@@ -759,6 +759,46 @@ Si le nom déclaré correspond à un utilisateur de l'annuaire (nom complet,
 courriel ou téléphone), la demande lui revient directement et il apparaît
 normalement.
 
+### Les chambres de l'hospitalisation
+
+```bash
+psql -d gmao -f scripts/referentiel-monkole-hospitalisation.sql
+```
+
+Huit services d'hospitalisation, leurs 45 chambres et les 23 appareils
+biomédicaux qui s'y trouvent — couveuses et tables de réanimation. Le script
+ne commet rien tant qu'on n'a pas décommenté `COMMIT` : exécuté tel quel, il
+montre ce qu'il créerait et n'écrit rien.
+
+**Les lits, berceaux et box ne deviennent pas des équipements.** Ce sont des
+places dans une chambre ; leur nombre est en commentaire de ligne. Créer 130
+fiches sans marque, sans numéro de série ni date d'achat remplirait
+l'inventaire de coquilles vides et fausserait tous les indicateurs de parc.
+Le jour où ces lits sont réellement inventoriés, ils s'ajouteront avec leurs
+vraies données.
+
+**Le nom d'une chambre reste ce que l'hôpital écrit** — « Chambre 104 »,
+« UTPR », « P.P », « Box Reanim ». Rien n'y est ajouté, pas même un nombre de
+places : un suffixe dans le nom empêcherait le rapprochement décrit
+ci-dessous.
+
+### « Ch 104 », « chambre 104 », « 104 »
+
+Le formulaire est libre, et personne n'écrit deux fois pareil. La GMAO retire
+d'elle-même le mot qui nomme la salle avant de comparer :
+
+| Écrit sur le formulaire | Rattaché à |
+|---|---|
+| `Ch 104`, `chambre 104`, `104`, `ch104`, `CH.104` | Chambre 104 — Chirurgie |
+| `215` | Chambre 215 — Néonatologie |
+| `Box Reanim` | Box Reanim — Réanimation |
+| `UTPR`, `P.P`, `200go` | les salles de Gynéco-Obstétrique |
+| `104 , 106, 110 , ET 112` | rien — quatre chambres à la fois ne se tranchent pas |
+| `Pharmacie ambulatoire` | rien, tant que ce local n'existe pas |
+
+Le service suit la chambre : une demande qui dit « Ch 104 » arrive en
+Chirurgie, sans que personne ait à le préciser.
+
 ### Le rattachement dépend du référentiel
 
 Une réponse qui indique « MKL2 » ne se rattache à un bâtiment que si `MKL2`

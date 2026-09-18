@@ -267,6 +267,47 @@ export interface ResultatConversion {
   soumissionId: string;
 }
 
+/**
+ * Mots qui nomment une salle sans l'identifier.
+ *
+ * Le formulaire est libre, et personne n'écrit deux fois pareil : la chambre
+ * 104 s'appelle « Ch 104 », « chambre 104 » ou « 104 » selon qui saisit.
+ * Comparer les chaînes entières ne les rapproche jamais — « Chambre 104 » ne
+ * contient pas « Ch 104 » — et la demande reste sans localisation alors que
+ * le référentiel a la réponse.
+ */
+// L'ordre compte : une alternance JavaScript retient la PREMIÈRE branche qui
+// convient, pas la plus longue. « ch » placé avant « chambre » amputait
+// « Chambre 104 » en « ambre 104 », et la chambre restait introuvable.
+const MOT_SALLE = /^(chambre|bureau|salle|local|room|chb|box|ch|sl|bx)\s*[.:°n-]*\s*/;
+
+/**
+ * Les écritures sous lesquelles une salle peut être reconnue.
+ *
+ * On garde le texte entier ET ce qui reste une fois le mot retiré : deux
+ * salles se rapprochent si l'une de leurs clés coïncide. Le repli sur le
+ * texte entier compte : « Pharmacie ambulatoire » n'a pas de numéro, et
+ * « 104 , 106, 110 , ET 112 » ne doit se rattacher à rien plutôt qu'à la
+ * première des quatre.
+ */
+export function clesSalle(texte: string | undefined): string[] {
+  const brut = normaliser(texte ?? '')
+    .replace(/[.,;]+$/, '')
+    .trim();
+  if (!brut) return [];
+  const cles = new Set([brut]);
+  const sansMot = brut.replace(MOT_SALLE, '').trim();
+  if (sansMot) cles.add(sansMot);
+  return [...cles];
+}
+
+/** Deux désignations de salle parlent-elles du même endroit ? */
+function memeSalle(local: { code: string; nom: string }, salle: string): boolean {
+  if (contient(local.nom, salle) || normaliser(local.code) === normaliser(salle)) return true;
+  const voulues = new Set(clesSalle(salle));
+  return [...clesSalle(local.code), ...clesSalle(local.nom)].some((c) => voulues.has(c));
+}
+
 function contient(a: string, b: string): boolean {
   const x = normaliser(a);
   const y = normaliser(b);
@@ -328,7 +369,7 @@ export function convertirSoumission(
     ? base.locaux.find((l) => l.id === equipement.localId)
     : salle
       ? base.locaux.find((l) => {
-          if (!contient(l.nom, salle) && normaliser(l.code) !== normaliser(salle)) return false;
+          if (!memeSalle(l, salle)) return false;
           if (!lieu) return true;
           const batiment = base.batiments.find((b) => b.id === l.batimentId);
           const site = base.sites.find((s) => s.id === l.siteId);

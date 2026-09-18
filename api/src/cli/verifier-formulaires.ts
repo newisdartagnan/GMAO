@@ -11,6 +11,7 @@ import type { BaseGMAO } from '@gmao/partage';
 import {
   CORRESPONDANCE_PAR_DEFAUT,
   chargerCorrespondance,
+  clesSalle,
   convertirSoumission,
   integrerDemande,
   reponsesLisibles,
@@ -841,6 +842,36 @@ console.log('\nLe nom écrit sur le formulaire');
   );
   verifier('demandeur connu : la demande lui revient', s.demande?.demandeurId, connu.id);
   verifier('et son nom n’est pas répété à part', s.demande?.origineExterne?.declarant, undefined);
+}
+
+/* ================================================================== */
+console.log('\nLa même chambre, écrite de six façons');
+
+{
+  // Personne n'écrit deux fois pareil. Comparer les chaînes entières ne
+  // rapprochait jamais « Ch 104 » de « Chambre 104 », et la demande restait
+  // sans localisation alors que le référentiel avait la réponse.
+  const memes = ['Ch 104', 'Chambre 104', '104', 'ch104', 'CH.104', 'Ch 104,'];
+  for (const ecriture of memes) {
+    verifier(`« ${ecriture} » se ramène à 104`, clesSalle(ecriture).includes('104'), true);
+  }
+
+  // L'alternance JavaScript retient la PREMIÈRE branche qui convient, pas la
+  // plus longue : « ch » placé avant « chambre » amputait « Chambre 104 » en
+  // « ambre 104 ».
+  verifier('« chambre » n’est pas amputé en « ambre »', clesSalle('Chambre 104'), ['chambre 104', '104']);
+
+  // Ce qui n'a pas de numéro garde son texte, et ne doit surtout pas se
+  // réduire à quoi que ce soit.
+  verifier('un nom sans numéro reste entier', clesSalle('Pharmacie ambulatoire'), ['pharmacie ambulatoire']);
+  verifier('plusieurs chambres à la fois : aucune clé de numéro', clesSalle('104 , 106, 110 , ET 112'), [
+    '104 , 106, 110 , et 112',
+  ]);
+  verifier('rien ne se ramène à rien', clesSalle(undefined), []);
+  verifier('un mot seul reste ce mot', clesSalle('UTPR'), ['utpr']);
+  // « Box Urg » ne doit pas se réduire à « urg » au point de rejoindre une
+  // chambre nommée « Urg » ailleurs — mais garde sa clé entière.
+  verifier('« Box Urg » garde son écriture entière', clesSalle('Box Urg')[0], 'box urg');
 }
 
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);
