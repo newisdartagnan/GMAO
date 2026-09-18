@@ -829,6 +829,33 @@ Ce que la commande dit quand ça ne va pas :
 | `Aucun tableau nommé dans ce classeur` | ouvrir le classeur, sélectionner la plage des réponses, Insertion → Tableau |
 | `MSFORMS_TABLEAU vaut « X », absent du classeur` | mettre le nom proposé dans `.env` |
 | `Le tableau est vide` | aucune réponse reçue, ou ce n'est pas le bon tableau |
+| `Impossible de joindre login.microsoftonline.com` | le conteneur ne sort pas : voir ci-dessous |
+
+### Quand le conteneur ne sort pas
+
+`fetch failed` était le message de Node : il ne dit ni à qui l'on parlait, ni
+pourquoi. La GMAO nomme maintenant l'hôte et la cause — nom de domaine
+introuvable, connexion refusée, délai dépassé, certificat refusé. Ce sont
+quatre pannes distinctes, et aucune ne se répare du même geste.
+
+Rien de tout cela ne vient du connecteur : la configuration Microsoft n'a
+même pas été soumise. Le contrôle se fait **depuis le conteneur**, car c'est
+lui qui doit sortir — le faire depuis la machine hôte ne prouverait rien :
+
+```bash
+docker compose exec api node -e "fetch('https://login.microsoftonline.com').then(r=>console.log(r.status)).catch(e=>console.log(e.cause?.code??e.message))"
+```
+
+| Ce que ça répond | La cause |
+|---|---|
+| un nombre (`200`, `400`…) | le conteneur sort ; le problème est ailleurs |
+| `ENOTFOUND` / `EAI_AGAIN` | pas de résolveur DNS dans le conteneur |
+| `ECONNREFUSED` / `ETIMEDOUT` | pare-feu sortant |
+| une erreur de certificat | proxy d'entreprise dont l'autorité n'est pas connue du conteneur |
+
+Après un redémarrage de la pile, laisser une minute au démon Docker avant de
+conclure : la résolution de noms n'est pas toujours prête à la seconde où le
+conteneur démarre.
 
 ### Surveiller et rattraper
 

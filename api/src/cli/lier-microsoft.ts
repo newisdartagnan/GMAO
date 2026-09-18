@@ -11,6 +11,7 @@ import {
   trouverClasseurs,
 } from '../integrations/microsoft.ts';
 import { optionsMicrosoft } from '../integrations/collecte.ts';
+import { joindre } from '../integrations/reseau.ts';
 
 /**
  * Autorisation initiale du connecteur Microsoft.
@@ -127,7 +128,7 @@ if (!config.microsoft.classeur) {
 process.stdout.write('Lecture du classeur… ');
 try {
   const url = `${config.microsoft.graphBase}${cheminClasseur(config.microsoft.classeur)}/workbook/tables`;
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const r = await joindre(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const corps = (await r.json().catch(() => ({}))) as {
     value?: { name: string }[];
     error?: { message?: string };

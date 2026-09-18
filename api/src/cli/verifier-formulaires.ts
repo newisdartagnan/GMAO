@@ -18,6 +18,7 @@ import {
 import type { SoumissionFormulaire } from '../integrations/formulaires.ts';
 import * as jotform from '../integrations/jotform.ts';
 import * as microsoft from '../integrations/microsoft.ts';
+import { raisonReseau } from '../integrations/reseau.ts';
 
 /**
  * Contrôle de l'interprétation des formulaires.
@@ -674,6 +675,41 @@ console.log('\nClasseur rendu en plusieurs pages par Graph');
   const appeler = async () => ({ value: [{ values: [['seule']] }] });
   const lues = await microsoft.toutesLesLignes(appeler, 'rows');
   verifier('une seule page reste une seule page', lues.length, 1);
+}
+
+/* ================================================================== */
+console.log('\nPannes réseau traduites en gestes');
+
+{
+  // Node lève « TypeError: fetch failed » et range le motif dans « cause ».
+  // Sans le déplier, les trois pannes ci-dessous se ressemblent à l'écran
+  // alors qu'aucune ne se répare du même geste.
+  const echec = (code: string) =>
+    Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('x'), { code }) });
+
+  verifier('DNS muet → sortie du conteneur', /DNS|sortie vers Internet/.test(raisonReseau(echec('ENOTFOUND'))), true);
+  verifier('DNS temporaire → même geste', /DNS|sortie vers Internet/.test(raisonReseau(echec('EAI_AGAIN'))), true);
+  verifier('port fermé → connexion refusée', raisonReseau(echec('ECONNREFUSED')), 'connexion refusée');
+  verifier(
+    'certificat → proxy d’entreprise',
+    /proxy/.test(raisonReseau(echec('UNABLE_TO_VERIFY_LEAF_SIGNATURE'))),
+    true,
+  );
+  verifier(
+    'délai dépassé nommé comme tel',
+    raisonReseau(Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' })),
+    'aucune réponse dans le délai imparti',
+  );
+  verifier(
+    'cause imbriquée : le code le plus profond l’emporte',
+    raisonReseau({ message: 'fetch failed', cause: { message: 'y', cause: { code: 'ECONNRESET' } } }),
+    'connexion coupée en cours de route',
+  );
+  verifier(
+    'panne inconnue : le message reste, avec son code',
+    raisonReseau(Object.assign(new Error('quelque chose'), { code: 'EWEIRD' })),
+    'quelque chose (EWEIRD)',
+  );
 }
 
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);

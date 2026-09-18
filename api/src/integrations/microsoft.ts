@@ -1,5 +1,6 @@
 import { normaliser } from '@gmao/partage';
 import type { SoumissionFormulaire } from './formulaires.ts';
+import { joindre } from './reseau.ts';
 
 /**
  * Adaptateur Microsoft Forms.
@@ -333,7 +334,7 @@ export async function obtenirJeton(options: OptionsGraph): Promise<string> {
   // suffit à faire refuser l'échange.
   if (delegue && options.clientSecret) corps.set('client_secret', options.clientSecret);
 
-  const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/token`, {
+  const reponse = await joindre(`${racine}/${options.tenantId}/oauth2/v2.0/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: corps,
@@ -398,7 +399,7 @@ export async function demanderCodeAppareil(options: {
   jetonBase?: string;
 }): Promise<DemandeAppareil> {
   const racine = options.jetonBase ?? 'https://login.microsoftonline.com';
-  const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/devicecode`, {
+  const reponse = await joindre(`${racine}/${options.tenantId}/oauth2/v2.0/devicecode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: options.clientId, scope: porteeDeleguee(options.portee) }),
@@ -431,7 +432,7 @@ export async function attendreAutorisation(
   while (Date.now() < limite) {
     await new Promise((r) => setTimeout(r, attente));
 
-    const reponse = await fetch(`${racine}/${options.tenantId}/oauth2/v2.0/token`, {
+    const reponse = await joindre(`${racine}/${options.tenantId}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -551,7 +552,7 @@ export async function trouverClasseurs(
   base = 'https://graph.microsoft.com/v1.0',
 ): Promise<ClasseurTrouve[]> {
   const appeler = async (chemin: string): Promise<ItemDrive[]> => {
-    const r = await fetch(`${base}${chemin}`, {
+    const r = await joindre(`${base}${chemin}`, {
       headers: { Authorization: `Bearer ${jeton}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(30_000),
     });
@@ -696,7 +697,7 @@ export async function apercuClasseur(
   const item = `${racine}${cheminClasseur(options.classeur)}`;
 
   const appeler = async (url: string) => {
-    const r = await fetch(url, {
+    const r = await joindre(url, {
       headers: { Authorization: `Bearer ${jeton}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(30_000),
     });
@@ -766,7 +767,7 @@ export async function recupererSoumissions(
   const chemin = `${racine}${cheminClasseur(options.classeur)}/workbook/tables/${encodeURIComponent(tableau)}`;
 
   const appeler = async (url: string) => {
-    const r = await fetch(url, {
+    const r = await joindre(url, {
       headers: { Authorization: `Bearer ${jeton}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(30_000),
     });
