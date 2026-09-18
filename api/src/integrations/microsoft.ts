@@ -817,6 +817,26 @@ export async function resoudreTableau(
 }
 
 /**
+ * Ce que désigne un point de reprise : un numéro de réponse, ou une date.
+ *
+ * Le repère que la collecte fait avancer est un numéro — Forms les attribue
+ * dans l'ordre. Mais « Rattraper les 7 derniers jours », à l'écran, envoie une
+ * date. Les confondre ne levait aucune erreur : « Number » d'une date rend
+ * NaN, plus rien n'était filtré, et le bouton relisait le classeur entier.
+ * L'unicité sur l'identifiant évitait les doublons, si bien qu'il semblait
+ * fonctionner tout en faisant le contraire de ce qu'il annonce — et sur un
+ * classeur qui porte des mois d'historique, il aurait ouvert d'un coup tout
+ * ce qu'on avait justement choisi de laisser dans Excel.
+ */
+export function interpreterRepere(depuis?: string): { id?: number; date?: string } {
+  const t = depuis?.trim();
+  if (!t) return {};
+  if (/^\d+$/.test(t)) return { id: Number(t) };
+  const date = normaliserDate(t);
+  return date ? { date } : {};
+}
+
+/**
  * Relit le tableau des réponses et rend les lignes postérieures au repère.
  *
  * Le repère est l'identifiant de réponse le plus élevé déjà traité. Forms
@@ -860,23 +880,33 @@ export async function recupererSoumissions(
   }
 
   const lignes = await toutesLesLignes(appeler, `${chemin}/rows`);
-  const repere = depuis ? Number(depuis) : Number.NaN;
+
+  const { id: repereId, date: depuisDate } = interpreterRepere(depuis);
+  const repere = repereId ?? Number.NaN;
 
   const soumissions: SoumissionFormulaire[] = [];
-  let maximum = Number.isNaN(repere) ? 0 : repere;
+  // Le maximum se calcule sur TOUTES les lignes lues, y compris écartées :
+  // la GMAO les a vues. Ne compter que les retenues ferait reculer le repère
+  // après un rattrapage par date qui ne ramène rien, et le tour suivant
+  // relirait tout.
+  let maximum = 0;
 
   for (const ligne of lignes) {
     const soumission = lireLigneClasseur(colonnes, ligne.values?.[0] ?? [], options.classeur);
     if (!soumission) continue;
 
     const numero = Number(soumission.id);
-    if (!Number.isNaN(repere) && !Number.isNaN(numero) && numero <= repere) continue;
     if (!Number.isNaN(numero)) maximum = Math.max(maximum, numero);
+
+    if (!Number.isNaN(repere) && !Number.isNaN(numero) && numero <= repere) continue;
+    if (depuisDate && soumission.date && soumission.date < depuisDate) continue;
     soumissions.push(soumission);
   }
 
   return {
     soumissions,
-    dernierHorodatage: maximum > 0 ? String(maximum) : depuis,
+    // Jamais une date : le repère qui sert de point de reprise reste un
+    // numéro de réponse, sinon le tour suivant ne saurait plus filtrer.
+    dernierHorodatage: maximum > 0 ? String(maximum) : Number.isNaN(repere) ? undefined : depuis,
   };
 }
