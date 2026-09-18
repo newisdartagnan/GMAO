@@ -45,6 +45,36 @@ export function NomUtilisateur({ id, avecRole = false }: { id?: ID; avecRole?: b
   );
 }
 
+/**
+ * Le nom écrit sur le formulaire, par quelqu'un qui n'a pas de compte.
+ *
+ * Les signalements arrivent sous un compte de service : c'est lui qui les
+ * porte en base, faute de pouvoir rattacher « Eugénie » à un utilisateur.
+ * Montrer ce compte dans la colonne « Demandeur » reviendrait à attribuer
+ * chaque demande à la même personne — qui n'a rien demandé — et à rendre
+ * trois signalements de trois services indiscernables.
+ */
+export function Declarant({ nom, viaCompte }: { nom: string; viaCompte?: ID }) {
+  const { index } = useGMAO();
+  // Le formulaire est libre : « Kanza Shekinah, 0823670757 ». Les initiales
+  // se prennent sur ce qui précède le numéro.
+  const partieNom = nom.split(/[,(]/)[0].trim() || nom;
+  const mots = partieNom.split(/\s+/);
+  const compte = viaCompte ? index.utilisateurs.get(viaCompte) : undefined;
+
+  return (
+    <span className="inline-flex items-center gap-2" title={nom}>
+      <Avatar nom={mots[mots.length - 1] ?? partieNom} prenom={mots.length > 1 ? mots[0] : undefined} />
+      <span className="truncate">
+        {partieNom}
+        <span className="block text-xs text-slate-500">
+          {compte ? `formulaire · via ${compte.prenom} ${compte.nom}` : 'déclaré sur le formulaire'}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 export function Avatar({ nom, prenom, taille = 'sm' }: { nom: string; prenom?: string; taille?: 'sm' | 'md' }) {
   const classes = taille === 'sm' ? 'size-6 text-[10px]' : 'size-9 text-xs';
   return (

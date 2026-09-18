@@ -738,6 +738,27 @@ les demandes arrivent en « gêne organisationnelle » et c'est le responsable
 qui requalifie — plutôt que la GMAO qui fasse dire au demandeur ce qu'il n'a
 pas dit.
 
+### Qui a demandé ?
+
+Le formulaire est anonyme au sens de la GMAO : « Eugénie » n'a pas de compte,
+et lui en créer un à chaque signalement peuplerait l'annuaire de fantômes.
+La demande est donc **portée** par le compte `FORMULAIRE_COMPTE_SERVICE`,
+mais c'est le **nom écrit sur le formulaire** qui s'affiche dans la colonne
+« Demandeur » :
+
+```
+Herdie Vita
+formulaire · via Céline Tshibangu
+```
+
+Sans cela, tous les signalements portaient le même nom — celui de quelqu'un
+qui n'avait rien demandé — et trois demandes de trois services devenaient
+indiscernables dans la liste.
+
+Si le nom déclaré correspond à un utilisateur de l'annuaire (nom complet,
+courriel ou téléphone), la demande lui revient directement et il apparaît
+normalement.
+
 ### Le rattachement dépend du référentiel
 
 Une réponse qui indique « MKL2 » ne se rattache à un bâtiment que si `MKL2`
@@ -912,6 +933,53 @@ docker compose exec api npm run lire-classeur --workspace=api -- --marquer-comme
 
 Tout ce qui porte un numéro supérieur est repris au tour suivant ; ce qui est
 déjà en base n'est pas dupliqué.
+
+### Le premier tour automatique s'abstient
+
+Si, au tout premier tour, aucun repère n'est posé et que le classeur contient
+plus de **50 réponses**, la collecte **n'importe rien** et le dit dans
+**Paramètres → Formulaire externe** et dans `etat-connecteur` :
+
+```
+863 réponses attendent et aucun repère de lecture n'est posé. Rien n'a été
+importé : ce classeur porte un historique, et l'ouvrir en entier remplirait
+la file de demandes déjà réglées.
+```
+
+C'est une retenue, pas une panne : elle laisse le temps de choisir. Deux
+issues, selon ce que vous voulez :
+
+```bash
+# ne prendre que les nouvelles
+docker compose exec api npm run lire-classeur --workspace=api -- --marquer-comme-lu
+```
+
+ou **Paramètres → Formulaire externe → « Récupérer maintenant »**, qui
+importe tout : demandée explicitement, la reprise complète a lieu.
+
+La retenue ne vaut que pour le tour périodique. Un classeur neuf, ou un
+classeur dont le repère est déjà posé, n'est jamais retenu.
+
+### Retirer des demandes entrées par erreur
+
+```bash
+docker compose exec api npm run purger-externes --workspace=api -- --jusqua 869
+docker compose exec api npm run purger-externes --workspace=api -- --tout
+```
+
+La commande montre d'abord ce qu'elle retirerait, par statut, et demande de
+taper « supprimer ». **Ce qui a déjà été traité est conservé** — une demande
+acceptée, refusée ou transformée en ordre de travail porte une décision de
+quelqu'un, et ne s'efface pas sur un argument de ligne de commande.
+
+```
+  acceptee           1   réponses 13 à 13          · déjà traitée, conservée
+  nouvelle         859   réponses 9 à 869          ← à retirer
+  transformee        1   réponses 12 à 12          · déjà traitée, conservée
+```
+
+L'API sert la base depuis sa mémoire : après la purge, `docker compose
+restart api`, sans quoi l'écran continue d'afficher ce qui n'existe plus.
 
 ### Rattraper une période
 

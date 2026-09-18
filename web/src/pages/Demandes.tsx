@@ -12,7 +12,7 @@ import { Modale, Panneau } from '@/components/ui/Modale';
 import { Definitions, Encart } from '@/components/ui/Info';
 import { BarreFiltres } from '@/components/shared/Filtres';
 import { BadgePriorite, BadgeStatutDI } from '@/components/shared/Etiquettes';
-import { LienEquipement, LienOT, Localisation, NomUtilisateur } from '@/components/shared/Liens';
+import { Declarant, LienEquipement, LienOT, Localisation, NomUtilisateur } from '@/components/shared/Liens';
 import { ModaleCreationOT } from './EquipementDetail';
 import { useGMAO } from '@/data/store';
 import { api } from '@/data/api';
@@ -81,8 +81,20 @@ export function PageDemandes() {
       entete: 'Demandeur',
       largeur: '170px',
       secondaire: true,
-      tri: (d) => index.utilisateurs.get(d.demandeurId)?.nom ?? '',
-      rendu: (d) => <NomUtilisateur id={d.demandeurId} />,
+      // Une demande venue du formulaire est portée par le compte de service :
+      // afficher celui-ci donnerait le même nom à tous les signalements, quel
+      // que soit qui les a déposés. Le nom écrit sur le formulaire prime.
+      tri: (d) => d.origineExterne?.declarant ?? index.utilisateurs.get(d.demandeurId)?.nom ?? '',
+      export: (d) => {
+        const u = index.utilisateurs.get(d.demandeurId);
+        return d.origineExterne?.declarant ?? (u ? `${u.prenom} ${u.nom}` : '');
+      },
+      rendu: (d) =>
+        d.origineExterne?.declarant ? (
+          <Declarant nom={d.origineExterne.declarant} />
+        ) : (
+          <NomUtilisateur id={d.demandeurId} />
+        ),
     },
     {
       cle: 'impact',
@@ -241,7 +253,14 @@ export function PageDemandes() {
             <Definitions
               colonnes={1}
               items={[
-                { label: 'Demandeur', valeur: <NomUtilisateur id={selection.demandeurId} avecRole /> },
+                {
+                  label: 'Demandeur',
+                  valeur: selection.origineExterne?.declarant ? (
+                    <Declarant nom={selection.origineExterne.declarant} viaCompte={selection.demandeurId} />
+                  ) : (
+                    <NomUtilisateur id={selection.demandeurId} avecRole />
+                  ),
+                },
                 { label: 'Service', valeur: index.services.get(selection.serviceId)?.nom },
                 { label: 'Localisation', valeur: <Localisation localId={selection.localId} /> },
                 { label: 'Équipement', valeur: <LienEquipement id={selection.equipementId} /> },

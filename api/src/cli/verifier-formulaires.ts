@@ -801,5 +801,47 @@ console.log('\nPoint de reprise : un numéro, ou une date');
   verifier('illisible : pas de filtre plutôt qu’un filtre au hasard', microsoft.interpreterRepere('bientôt'), {});
 }
 
+/* ================================================================== */
+console.log('\nLe nom écrit sur le formulaire');
+
+{
+  // La demande est portée par le compte de service, faute de pouvoir
+  // rattacher « Eugénie » à un utilisateur. Sans conserver son nom à part,
+  // la liste affiche le compte de service pour tout le monde, et trois
+  // signalements de trois personnes deviennent indiscernables.
+  const r = convertirSoumission(
+    base,
+    soumission({ [MONKOLE.demandeur]: 'Herdie Vita', [MONKOLE.description]: 'Chasse d’eau HS' }),
+    correspondance,
+    porteur,
+  );
+  verifier('nom déclaré conservé', r.demande?.origineExterne?.declarant, 'Herdie Vita');
+  verifier('la demande reste portée par le compte de service', r.demande?.demandeurId, porteur);
+  verifier(
+    'numéro de téléphone collé au nom : conservé tel quel',
+    convertirSoumission(
+      base,
+      soumission({ [MONKOLE.demandeur]: 'Kanza Shekinah, 0823670757', [MONKOLE.description]: 'Lampe' }),
+      correspondance,
+      porteur,
+    ).demande?.origineExterne?.declarant,
+    'Kanza Shekinah, 0823670757',
+  );
+
+  // Un demandeur de l'annuaire porte sa propre demande : pas de doublon.
+  const connu = base.utilisateurs[3];
+  const s = convertirSoumission(
+    base,
+    soumission({
+      [MONKOLE.demandeur]: `${connu.prenom} ${connu.nom}`,
+      [MONKOLE.description]: 'Panne',
+    }),
+    correspondance,
+    porteur,
+  );
+  verifier('demandeur connu : la demande lui revient', s.demande?.demandeurId, connu.id);
+  verifier('et son nom n’est pas répété à part', s.demande?.origineExterne?.declarant, undefined);
+}
+
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);
 process.exit(echecs === 0 ? 0 : 1);

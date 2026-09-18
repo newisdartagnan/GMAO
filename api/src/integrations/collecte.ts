@@ -246,7 +246,25 @@ export async function marquerCommeLu(dernierId: string): Promise<void> {
   );
 }
 
-export async function synchroniser(forcerDepuis?: string): Promise<ResultatSynchronisation> {
+/**
+ * Nombre de réponses au-delà duquel un tout premier tour automatique
+ * s'abstient d'importer.
+ *
+ * Un classeur neuf n'en a que quelques-unes ; un classeur en service depuis
+ * des mois en a des centaines, déjà traitées ailleurs. La collecte ne peut
+ * pas distinguer les deux, mais elle peut refuser de décider seule.
+ */
+const PREMIER_TOUR_MAX = 50;
+
+export async function synchroniser(
+  forcerDepuis?: string,
+  /**
+   * Le tour périodique, par opposition à un clic sur « Récupérer
+   * maintenant ». La retenue ci-dessous ne vaut que pour lui : demandée
+   * explicitement, la reprise complète doit avoir lieu.
+   */
+  automatique = false,
+): Promise<ResultatSynchronisation> {
   if (!recuperationActive()) {
     throw new Error(
       config.formulaire.source === 'microsoft'
@@ -273,6 +291,22 @@ export async function synchroniser(forcerDepuis?: string): Promise<ResultatSynch
   } catch (e) {
     await noterLecture(undefined, 0, e instanceof Error ? e.message : String(e));
     throw e;
+  }
+
+  // Le premier tour d'un classeur déjà en service ouvrirait d'un coup tout
+  // son historique — des centaines de demandes réglées depuis des mois, en
+  // « nouvelle », qui noient les vraies. Personne n'a demandé cela, et une
+  // fois entrées il faut les ressortir une à une. La collecte s'arrête donc
+  // et le dit, plutôt que de trancher à la place de quelqu'un.
+  if (automatique && !depuis && soumissions.length > PREMIER_TOUR_MAX) {
+    const message =
+      `${soumissions.length} réponses attendent et aucun repère de lecture n'est posé. ` +
+      'Rien n’a été importé : ce classeur porte un historique, et l’ouvrir en entier ' +
+      'remplirait la file de demandes déjà réglées. Pour ne prendre que les nouvelles : ' +
+      '« docker compose exec api npm run lire-classeur --workspace=api -- --marquer-comme-lu ». ' +
+      'Pour tout reprendre malgré tout : Paramètres → Formulaire externe → « Récupérer maintenant ».';
+    await noterLecture(undefined, 0, message);
+    return { creees: [], ignorees: 0, rejets: [], lues: soumissions.length, depuis: null, jusqua: null };
   }
 
   const resultat = await importer(soumissions);
@@ -328,7 +362,7 @@ export function demarrerCollecte(journaliser: (m: string, e?: unknown) => void):
     }
     autorisationSignalee = false;
     try {
-      const r = await synchroniser();
+      const r = await synchroniser(undefined, true);
       if (r.creees.length || r.rejets.length) {
         journaliser(
           `Formulaire : ${r.lues} réponse(s) lue(s), ${r.creees.length} demande(s) créée(s)` +

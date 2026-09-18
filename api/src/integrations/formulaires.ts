@@ -416,6 +416,7 @@ export function convertirSoumission(
         formulaireId: soumission.formulaireId,
         soumissionId: soumission.id,
         recuLe: isoHeure(aujourdHui()),
+        declarant: declarant && !utilisateur ? declarant : undefined,
         reponses: reponsesLisibles(soumission),
       },
     },
