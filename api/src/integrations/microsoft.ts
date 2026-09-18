@@ -612,6 +612,35 @@ export function colonneHorodatage(colonnes: string[]): string | undefined {
 }
 
 /**
+ * Une réponse rendue lisible par un humain.
+ *
+ * Excel range une date saisie dans une colonne datée sous forme de nombre de
+ * jours depuis 1899. La colonne d'horodatage passe déjà par
+ * « normaliserDate » ; les autres, non — « Date de dèbut du probleme »
+ * arrivait dans la demande sous la forme « 46274 », que personne ne peut
+ * lire, et qui ne dit même pas qu'il s'agit d'une date.
+ *
+ * La conversion ne s'applique qu'aux colonnes dont le nom parle de date, et
+ * qu'à une valeur purement numérique : « depuis 3 jours » est une réponse
+ * valable et doit rester telle quelle.
+ */
+function valeurLisible(libelle: string, brut: unknown): string {
+  const texte = texteDe(brut);
+  if (!texte || !/date|jour|quand|depuis/.test(cleComparaison(libelle))) return texte;
+
+  // Bornes de la sérialisation Excel, soit 1954 à 2119. En dehors, le nombre
+  // n'est pas une date : « 12 » resterait « 12 », et non le 1er décembre 2001
+  // que « new Date('12') » veut y lire.
+  const serie = Number(texte.replace(',', '.'));
+  if (!/^\d+([.,]\d+)?$/.test(texte) || !(serie > 20000 && serie < 80000)) return texte;
+
+  const iso = normaliserDate(texte);
+  if (!iso) return texte;
+  const [annee, mois, jour] = iso.slice(0, 10).split('-');
+  return `${jour}/${mois}/${annee}`;
+}
+
+/**
  * Une ligne du classeur, ramenée à une soumission.
  *
  * La première colonne porte l'identifiant de réponse, quel que soit son
@@ -637,7 +666,7 @@ export function lireLigneClasseur(
     date: colonneDate ? normaliserDate(parColonne.get(colonneDate)) : undefined,
     reponses: colonnesReponses(colonnes).map((libelle) => ({
       libelle,
-      valeur: texteDe(parColonne.get(libelle)),
+      valeur: valeurLisible(libelle, parColonne.get(libelle)),
     })),
   };
 }
@@ -750,6 +779,44 @@ export async function apercuClasseur(
 }
 
 /**
+ * Le tableau à lire, quel que soit le nom inscrit dans MSFORMS_TABLEAU.
+ *
+ * Forms nomme le tableau des réponses comme il veut — « Tableau1 » sur un
+ * classeur laissé tel quel, « Repostes » sur celui de Monkole. Un nom qui ne
+ * correspond pas faisait échouer la collecte sur un « 404 » alors que le
+ * classeur n'a qu'un tableau et qu'il n'y avait aucune ambiguïté ; pire,
+ * « lire-classeur », lui, se rabattait déjà sur le premier et affichait un
+ * contenu que la collecte ne verrait jamais. Les deux lisent maintenant le
+ * même tableau.
+ *
+ * Le repli ne joue que s'il n'y a rien à trancher : plusieurs tableaux et un
+ * nom erroné, c'est un refus, avec la liste — lire le mauvais tableau en
+ * silence serait pire que ne rien lire.
+ */
+export async function resoudreTableau(
+  appeler: (url: string) => Promise<Record<string, unknown>>,
+  item: string,
+  voulu: string,
+): Promise<string> {
+  const liste = (await appeler(`${item}/workbook/tables`)) as { value?: { name: string }[] };
+  const tableaux = (liste.value ?? []).map((t) => t.name);
+
+  if (tableaux.includes(voulu)) return voulu;
+  if (!tableaux.length) {
+    throw new Error(
+      'Ce classeur ne contient aucun tableau nommé. Les réponses de Forms en ' +
+        'occupent normalement un : ouvrez le classeur, sélectionnez la plage des ' +
+        'réponses, puis Insertion → Tableau.',
+    );
+  }
+  if (tableaux.length === 1) return tableaux[0];
+  throw new Error(
+    `MSFORMS_TABLEAU vaut « ${voulu} », absent du classeur, qui en contient ` +
+      `plusieurs : ${tableaux.join(', ')}. Indiquez lequel lire.`,
+  );
+}
+
+/**
  * Relit le tableau des réponses et rend les lignes postérieures au repère.
  *
  * Le repère est l'identifiant de réponse le plus élevé déjà traité. Forms
@@ -763,8 +830,7 @@ export async function recupererSoumissions(
 ): Promise<{ soumissions: SoumissionFormulaire[]; dernierHorodatage?: string }> {
   const jeton = await obtenirJeton(options);
   const racine = options.base ?? 'https://graph.microsoft.com/v1.0';
-  const tableau = options.tableau ?? 'Tableau1';
-  const chemin = `${racine}${cheminClasseur(options.classeur)}/workbook/tables/${encodeURIComponent(tableau)}`;
+  const item = `${racine}${cheminClasseur(options.classeur)}`;
 
   const appeler = async (url: string) => {
     const r = await joindre(url, {
@@ -777,6 +843,9 @@ export async function recupererSoumissions(
     }
     return r.json() as Promise<Record<string, unknown>>;
   };
+
+  const tableau = await resoudreTableau(appeler, item, options.tableau ?? 'Tableau1');
+  const chemin = `${item}/workbook/tables/${encodeURIComponent(tableau)}`;
 
   const entetes = (await appeler(`${chemin}/headerRowRange`)) as { values?: unknown[][] };
   const colonnes = (entetes.values?.[0] ?? []).map((v) => String(v ?? '').trim());

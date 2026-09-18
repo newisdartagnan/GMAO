@@ -715,6 +715,29 @@ La présélection ne décide de rien — le domaine de l'équipement, une fois
 celui-ci rattaché, l'emporte sur le secteur déclaré : le demandeur dit ce
 qu'il croit, l'inventaire dit ce qui est.
 
+### « Haute » n'est pas « vitale »
+
+Le formulaire propose trois niveaux ; la GMAO en compte quatre, et son P1
+vaut une heure de délai de prise en charge.
+
+| Priorité déclarée | Priorité GMAO | Prise en charge |
+|---|---|---|
+| Haute | P2 — Urgente | 4 h |
+| Moyenne | P3 — Normale | 24 h |
+| Basse | P4 — Planifiée | 72 h |
+| « vital », « danger », « critique », « arrêt total » dans la réponse | P1 — Vitale | 1 h |
+
+P1 reste réservé à ce qui est explicitement vital. Le premier cran d'une
+échelle à trois niveaux est ce que les demandeurs cochent par réflexe :
+le lire comme « équipement vital immobilisé » faisait arriver toute la file
+en P1, et une file où tout est prioritaire ne trie plus rien.
+
+**L'impact patient n'est pas déduit de l'urgence déclarée.** « Risque vital »
+est un jugement clinique. Tant que le formulaire ne pose pas la question,
+les demandes arrivent en « gêne organisationnelle » et c'est le responsable
+qui requalifie — plutôt que la GMAO qui fasse dire au demandeur ce qu'il n'a
+pas dit.
+
 ### Le rattachement dépend du référentiel
 
 Une réponse qui indique « MKL2 » ne se rattache à un bâtiment que si `MKL2`
@@ -827,7 +850,7 @@ Ce que la commande dit quand ça ne va pas :
 | `MSFORMS_CLASSEUR n'est pas renseigné` | `npm run trouver-classeur --workspace=api`, puis recopier la ligne rendue |
 | `404 / ItemNotFound` | la référence ne désigne rien : la relever avec `trouver-classeur`, sans la saisir à la main |
 | `Aucun tableau nommé dans ce classeur` | ouvrir le classeur, sélectionner la plage des réponses, Insertion → Tableau |
-| `MSFORMS_TABLEAU vaut « X », absent du classeur` | mettre le nom proposé dans `.env` |
+| `MSFORMS_TABLEAU vaut « X », absent du classeur` | mettre le nom proposé dans `.env` — la lecture se rabat sur l'unique tableau en attendant |
 | `Le tableau est vide` | aucune réponse reçue, ou ce n'est pas le bon tableau |
 | `Impossible de joindre login.microsoftonline.com` | le conteneur ne sort pas : voir ci-dessous |
 
@@ -856,6 +879,29 @@ docker compose exec api node -e "fetch('https://login.microsoftonline.com').then
 Après un redémarrage de la pile, laisser une minute au démon Docker avant de
 conclure : la résolution de noms n'est pas toujours prête à la seconde où le
 conteneur démarre.
+
+### Un classeur déjà en service : ne pas importer l'historique
+
+Un formulaire qui tourne depuis des mois porte tout son passé. Au premier
+tour, la GMAO prendrait ces centaines de réponses pour du nouveau et
+ouvrirait autant de demandes « à qualifier », dont la plupart sont réglées
+depuis longtemps. `lire-classeur` le signale quand aucun repère n'est posé :
+
+```
+Aucun repère de lecture n'est posé. Au prochain tour, la collecte
+ouvrira 863 demandes d'un coup, toutes « à qualifier » —
+y compris ce qui est réglé depuis des mois.
+```
+
+Pour ne prendre que ce qui arrivera désormais :
+
+```bash
+docker compose exec api npm run lire-classeur --workspace=api -- --marquer-comme-lu
+```
+
+Le repère se pose sur la dernière réponse existante ; le classeur Excel
+reste l'archive de l'historique. À faire **une fois**, avant le premier tour
+de collecte. Pour tout reprendre au contraire, il suffit de ne rien faire.
 
 ### Surveiller et rattraper
 

@@ -4,7 +4,13 @@ import { config } from '../config.ts';
 import { migrer } from '../db/migrations.ts';
 import { pool } from '../db/pool.ts';
 import { chargerBase } from '../db/charger.ts';
-import { comptePorteur, microsoftAutorise, optionsMicrosoft } from '../integrations/collecte.ts';
+import {
+  comptePorteur,
+  lireEtatIntegration,
+  marquerCommeLu,
+  microsoftAutorise,
+  optionsMicrosoft,
+} from '../integrations/collecte.ts';
 import { apercuClasseur, lireLigneClasseur } from '../integrations/microsoft.ts';
 import { chargerCorrespondance, convertirSoumission } from '../integrations/formulaires.ts';
 
@@ -12,6 +18,7 @@ import { chargerCorrespondance, convertirSoumission } from '../integrations/form
  * Lecture à blanc du classeur des réponses.
  *
  *   npm run lire-classeur --workspace=api
+ *   npm run lire-classeur --workspace=api -- --marquer-comme-lu
  *
  * Savoir qu'on voit un fichier ne dit pas qu'on sait l'ouvrir, y trouver le
  * bon tableau et lire ses lignes. Cette commande montre le contenu réel —
@@ -19,6 +26,14 @@ import { chargerCorrespondance, convertirSoumission } from '../integrations/form
  * écrire. C'est la seule vérification qui prouve la chaîne de bout en bout
  * avant qu'une demande n'entre en base.
  */
+
+/**
+ * Poser le repère sur la dernière réponse, au lieu de simplement regarder.
+ *
+ * Utile une fois, à la mise en service d'un classeur qui tourne déjà : sans
+ * cela le premier tour de collecte prend tout l'historique pour du nouveau.
+ */
+const marquer = process.argv.slice(2).includes('--marquer-comme-lu');
 
 if (config.formulaire.source !== 'microsoft') {
   console.error('\nCette commande ne concerne que FORMULAIRE_SOURCE=microsoft.\n');
@@ -167,10 +182,40 @@ for (const cellules of apercu.lignes) {
   console.log(`     ${'équipement'.padEnd(32)}${equipement ?? 'aucun — à rapprocher à l’écran'}`);
 }
 
-console.log(
-  '\nRien n’a été écrit. Pour importer réellement :\n' +
-    '    Paramètres → Formulaire externe → « Récupérer maintenant »\n' +
-    '  ou laisser la collecte automatique faire son tour.\n',
-);
+const dernierId = apercu.lignes
+  .map((cellules) => lireLigneClasseur(apercu.colonnes, cellules, config.microsoft.classeur)?.id)
+  .filter((id): id is string => Boolean(id))
+  .at(-1);
+
+if (marquer && dernierId) {
+  await marquerCommeLu(dernierId);
+  console.log(
+    `\nRepère posé sur la réponse ${dernierId}. Les ${apercu.total} réponses déjà\n` +
+      'présentes sont tenues pour connues : la GMAO n’ouvrira de demande que\n' +
+      'pour ce qui arrivera après. Le classeur reste l’archive de l’historique.\n',
+  );
+} else {
+  const etat = await lireEtatIntegration();
+  const repere = etat?.dernierHorodatage;
+  console.log('\nRien n’a été écrit.');
+  if (!repere && apercu.total > 20) {
+    // Le cas qui fait mal : un classeur en service depuis des mois, et une
+    // collecte qui prendrait tout son historique pour du nouveau.
+    console.log(
+      `\nAucun repère de lecture n’est posé. Au prochain tour, la collecte\n` +
+        `ouvrira ${apercu.total} demandes d’un coup, toutes « à qualifier » —\n` +
+        `y compris ce qui est réglé depuis des mois.\n\n` +
+        `  Pour ne prendre que les nouvelles :\n` +
+        `    npm run lire-classeur --workspace=api -- --marquer-comme-lu\n\n` +
+        `  Pour tout reprendre malgré tout : laisser la collecte faire son tour.\n`,
+    );
+  } else {
+    console.log(
+      `${repere ? `Repère actuel : réponse ${repere}. ` : ''}Pour importer réellement :\n` +
+        '    Paramètres → Formulaire externe → « Récupérer maintenant »\n' +
+        '  ou laisser la collecte automatique faire son tour.\n',
+    );
+  }
+}
 
 await pool.end();

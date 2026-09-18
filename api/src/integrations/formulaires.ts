@@ -211,8 +211,14 @@ export function interpreterUrgence(texte: string | undefined, criticiteEquipemen
     // biomédical qui requalifiera, mais un respirateur ne dort pas en P4.
     return criticiteEquipement === 1 ? 'P2' : 'P3';
   }
-  if (/\bp1\b|vital|immediat|tres urgent|arret total|haute|elevee|critique/.test(t)) return 'P1';
-  if (/\bp2\b|urgent|bloquant|soin.*retard|degrade/.test(t)) return 'P2';
+  // « Haute » n'est pas « vitale ». Un formulaire à trois niveaux — Haute,
+  // Moyenne, Basse — se pose sur les quatre de la GMAO sans en écraser le
+  // sommet : P1 vaut une heure de délai et reste ce qu'on réserve à un
+  // équipement vital immobilisé. Le lire dans le premier cran d'une échelle
+  // que les demandeurs cochent par réflexe faisait arriver toute la file en
+  // P1 — et une file où tout est prioritaire ne trie plus rien.
+  if (/\bp1\b|vital|immediat|tres urgent|arret total|critique|danger|deces/.test(t)) return 'P1';
+  if (/\bp2\b|urgent|haute|elevee|bloquant|soin.*retard|degrade/.test(t)) return 'P2';
   if (/\bp4\b|basse|faible|planifi|quand possible|pas urgent|confort|esthetique/.test(t)) return 'P4';
   if (/\bp3\b|moyen|normal|courant/.test(t)) return 'P3';
   return criticiteEquipement === 1 ? 'P2' : 'P3';
@@ -223,6 +229,12 @@ export function interpreterImpact(
   priorite: PrioriteOT,
 ): DemandeIntervention['impactPatient'] {
   const t = normaliser(texte ?? '');
+  // Le formulaire ne pose pas toujours la question. Personne n'ayant affirmé
+  // de conséquence clinique, la GMAO n'a pas à en inventer une : « risque
+  // vital » est un jugement médical, pas une déduction tirée d'une case
+  // « urgence » cochée par le demandeur. Seule une urgence explicitement
+  // vitale — P1 ne s'obtient plus que sur ces mots-là — le justifie.
+  if (!t) return priorite === 'P1' ? 'risque_vital' : 'gene';
   if (/vital|deces|danger|grave/.test(t)) return 'risque_vital';
   if (/report|annul|retard.*soin|deprogramm/.test(t)) return 'report_soin';
   if (/gene|inconfort|desagrement/.test(t)) return 'gene';

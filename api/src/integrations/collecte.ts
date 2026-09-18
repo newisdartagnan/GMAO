@@ -224,6 +224,28 @@ async function interroger(depuis?: string) {
  * prolongée, ou pour rejouer une période : les doublons sont écartés à
  * l'insertion, donc relire trop large n'a aucune conséquence.
  */
+/**
+ * Pose le repère de lecture sans rien importer.
+ *
+ * Un classeur en service depuis des mois porte tout son historique. Au
+ * premier tour, la GMAO le prendrait pour du nouveau et ouvrirait des
+ * centaines de demandes déjà réglées, toutes « à qualifier » : le chef de
+ * maintenance découvre alors une file illisible, et la GMAO a l'air d'avoir
+ * inventé du travail. Poser le repère sur la dernière réponse existante dit
+ * « tout ceci est connu » — le classeur reste l'archive, la file part propre.
+ */
+export async function marquerCommeLu(dernierId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO integrations_etat (source, derniere_lecture, dernier_horodatage)
+          VALUES ($1, now(), $2)
+     ON CONFLICT (source) DO UPDATE
+            SET derniere_lecture   = now(),
+                dernier_horodatage = $2,
+                derniere_erreur    = NULL`,
+    [sourceActive(), dernierId],
+  );
+}
+
 export async function synchroniser(forcerDepuis?: string): Promise<ResultatSynchronisation> {
   if (!recuperationActive()) {
     throw new Error(
