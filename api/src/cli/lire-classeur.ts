@@ -19,6 +19,7 @@ import { chargerCorrespondance, convertirSoumission } from '../integrations/form
  *
  *   npm run lire-classeur --workspace=api
  *   npm run lire-classeur --workspace=api -- --marquer-comme-lu
+ *   npm run lire-classeur --workspace=api -- --marquer-comme-lu=868
  *
  * Savoir qu'on voit un fichier ne dit pas qu'on sait l'ouvrir, y trouver le
  * bon tableau et lire ses lignes. Cette commande montre le contenu réel —
@@ -33,7 +34,22 @@ import { chargerCorrespondance, convertirSoumission } from '../integrations/form
  * Utile une fois, à la mise en service d'un classeur qui tourne déjà : sans
  * cela le premier tour de collecte prend tout l'historique pour du nouveau.
  */
-const marquer = process.argv.slice(2).includes('--marquer-comme-lu');
+const drapeau = process.argv.slice(2).find((a) => a.startsWith('--marquer-comme-lu'));
+const marquer = Boolean(drapeau);
+/**
+ * Un repère explicite, pour revenir en arrière.
+ *
+ * Poser le repère est sans danger tant qu'on vise la dernière réponse ; mais
+ * une réponse arrivée entre le coup d'œil et la commande se retrouve marquée
+ * connue sans jamais avoir été importée. « --marquer-comme-lu=868 » permet de
+ * redescendre : tout ce qui porte un numéro supérieur sera repris au tour
+ * suivant, et l'unicité sur l'identifiant écarte ce qui est déjà en base.
+ */
+const repereVoulu = drapeau?.includes('=') ? drapeau.split('=')[1].trim() : undefined;
+if (repereVoulu !== undefined && !/^\d+$/.test(repereVoulu)) {
+  console.error(`\n« ${repereVoulu} » n’est pas un numéro de réponse.\n`);
+  process.exit(1);
+}
 
 if (config.formulaire.source !== 'microsoft') {
   console.error('\nCette commande ne concerne que FORMULAIRE_SOURCE=microsoft.\n');
@@ -187,13 +203,29 @@ const dernierId = apercu.lignes
   .filter((id): id is string => Boolean(id))
   .at(-1);
 
-if (marquer && dernierId) {
-  await marquerCommeLu(dernierId);
-  console.log(
-    `\nRepère posé sur la réponse ${dernierId}. Les ${apercu.total} réponses déjà\n` +
-      'présentes sont tenues pour connues : la GMAO n’ouvrira de demande que\n' +
-      'pour ce qui arrivera après. Le classeur reste l’archive de l’historique.\n',
-  );
+if (marquer && (repereVoulu ?? dernierId)) {
+  const pose = repereVoulu ?? dernierId!;
+  const avant = (await lireEtatIntegration())?.dernierHorodatage;
+  await marquerCommeLu(pose);
+
+  if (repereVoulu) {
+    const aReprendre = apercu.total && dernierId ? Number(dernierId) - Number(pose) : 0;
+    console.log(
+      `\nRepère ${avant ? `déplacé de ${avant} à ${pose}` : `posé sur ${pose}`}.\n` +
+        (aReprendre > 0
+          ? `Les réponses au-delà de ${pose} — soit ${aReprendre} au plus — seront reprises\n` +
+            'au prochain tour. Celles déjà en base ne seront pas dupliquées.\n'
+          : 'Rien au-delà de ce numéro pour l’instant.\n'),
+    );
+  } else {
+    console.log(
+      `\nRepère posé sur la réponse ${pose}. Les ${apercu.total} réponses déjà\n` +
+        'présentes sont tenues pour connues : la GMAO n’ouvrira de demande que\n' +
+        'pour ce qui arrivera après. Le classeur reste l’archive de l’historique.\n' +
+        `\nSi une réponse est arrivée entre-temps et se trouve avalée, redescendre :\n` +
+        `    npm run lire-classeur --workspace=api -- --marquer-comme-lu=<numéro>\n`,
+    );
+  }
 } else {
   const etat = await lireEtatIntegration();
   const repere = etat?.dernierHorodatage;

@@ -780,5 +780,26 @@ console.log('\nDates rangées par Excel sous forme de nombre');
   );
 }
 
+/* ================================================================== */
+console.log('\nPoint de reprise : un numéro, ou une date');
+
+{
+  // La collecte fait avancer un numéro de réponse ; « Rattraper les 7
+  // derniers jours » envoie une date. Confondre les deux faisait relire le
+  // classeur entier sans que rien ne le signale.
+  verifier('repère courant : un numéro', microsoft.interpreterRepere('871'), { id: 871 });
+  verifier(
+    'rattrapage : une date',
+    microsoft.interpreterRepere('2026-09-11 07:00:00'),
+    { date: '2026-09-11T07:00:00' },
+  );
+  verifier('date française acceptée', microsoft.interpreterRepere('11/09/2026'), {
+    date: '2026-09-11T00:00:00',
+  });
+  verifier('rien : pas de filtre', microsoft.interpreterRepere(undefined), {});
+  verifier('vide : pas de filtre', microsoft.interpreterRepere('  '), {});
+  verifier('illisible : pas de filtre plutôt qu’un filtre au hasard', microsoft.interpreterRepere('bientôt'), {});
+}
+
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);
 process.exit(echecs === 0 ? 0 : 1);

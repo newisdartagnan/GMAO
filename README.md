@@ -903,6 +903,27 @@ Le repère se pose sur la dernière réponse existante ; le classeur Excel
 reste l'archive de l'historique. À faire **une fois**, avant le premier tour
 de collecte. Pour tout reprendre au contraire, il suffit de ne rien faire.
 
+Une réponse déposée entre le coup d'œil et la commande se retrouverait
+marquée connue sans jamais avoir été importée. Le repère se redescend :
+
+```bash
+docker compose exec api npm run lire-classeur --workspace=api -- --marquer-comme-lu=868
+```
+
+Tout ce qui porte un numéro supérieur est repris au tour suivant ; ce qui est
+déjà en base n'est pas dupliqué.
+
+### Rattraper une période
+
+**Paramètres → Formulaire externe → « Rattraper les 7 derniers jours »**
+relit par date de plainte, indépendamment du repère. Utile après une coupure
+du lien Internet, ou quand une réponse a été sautée.
+
+Attention sur un classeur qui porte des mois d'historique : la période
+demandée est reprise en entier. Sept jours en arrière sur un formulaire
+alimenté quotidiennement, c'est une semaine de demandes qui entrent d'un
+coup — y compris celles que vous aviez choisi de laisser dans Excel.
+
 ### Surveiller et rattraper
 
 **Paramètres → Formulaire externe** montre l'état du connecteur, la dernière
