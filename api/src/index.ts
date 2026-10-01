@@ -12,6 +12,8 @@ import { enregistrerRoutes } from './routes/index.ts';
 import { ErreurMetier } from './routes/aide.ts';
 import { enregistrerCorpsFormulaire } from './integrations/corps-formulaire.ts';
 import { arreterCollecte, demarrerCollecte } from './integrations/collecte.ts';
+import { brancherNotifications } from './courriel/affectation.ts';
+import { courrielActif, manquePourEnvoyer } from './courriel/envoi.ts';
 
 const app = Fastify({
   logger: {
@@ -84,6 +86,13 @@ async function demarrer(): Promise<void> {
   // La collecte démarre après l'écoute : si JotForm est injoignable, cela ne
   // doit pas empêcher l'hôpital d'utiliser sa GMAO.
   demarrerCollecte((m, e) => (e ? app.log.warn({ err: e }, m) : app.log.info(m)));
+
+  brancherNotifications((m, e) => (e ? app.log.warn({ err: e }, m) : app.log.info(m)));
+  app.log.info(
+    courrielActif()
+      ? `Notifications par courriel : ${config.courriel.transport}, depuis ${config.courriel.expediteur}`
+      : `Notifications par courriel : aucun envoi — ${manquePourEnvoyer()[0]}`,
+  );
 }
 
 async function arreter(signal: string): Promise<void> {

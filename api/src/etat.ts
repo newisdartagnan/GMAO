@@ -98,6 +98,7 @@ export async function commande<T>(
     }
 
     base = copie;
+    prevenirObservateurs(avant, copie);
     return { resultat, patch };
   });
 
@@ -105,6 +106,36 @@ export async function commande<T>(
   // repart de l'état inchangé, l'erreur étant remontée à l'appelant.
   file = execution.catch(() => undefined);
   return execution;
+}
+
+/**
+ * Ce qui veut savoir qu'une commande a eu lieu.
+ *
+ * Une notification se branche ici plutôt que sur chaque route : il y a
+ * plusieurs chemins pour affecter un ordre de travail — l'écran
+ * d'affectation, la transformation d'une demande, une planification en lot —
+ * et en oublier un donnerait un technicien prévenu une fois sur deux, sans
+ * que rien ne le signale. L'état d'avant et celui d'après disent la vérité,
+ * quel que soit le chemin emprunté.
+ */
+type Observateur = (avant: BaseGMAO, apres: BaseGMAO) => void;
+
+const observateurs: Observateur[] = [];
+
+export function observerCommandes(o: Observateur): void {
+  observateurs.push(o);
+}
+
+function prevenirObservateurs(avant: BaseGMAO, apres: BaseGMAO): void {
+  for (const o of observateurs) {
+    try {
+      o(avant, apres);
+    } catch {
+      // Une notification qui échoue ne doit pas défaire l'écriture : elle est
+      // déjà en base, et la commande a réussi. Le détail est journalisé par
+      // l'observateur lui-même, qui sait de quoi il parle.
+    }
+  }
 }
 
 /** Lecture seule protégée par la même file, pour un instantané cohérent. */

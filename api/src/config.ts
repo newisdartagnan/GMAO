@@ -110,6 +110,55 @@ export const config = {
     apiBase: lire('JOTFORM_API_BASE', 'https://api.jotform.com'),
   },
 
+  /**
+   * Notification par courriel.
+   *
+   * Un technicien ne regarde pas la GMAO toutes les dix minutes : sans
+   * notification, un ordre de travail affecté le matin peut attendre
+   * l'après-midi que quelqu'un pense à ouvrir l'écran.
+   *
+   * Rien n'est envoyé tant que « COURRIEL_TRANSPORT » n'est pas changé : une
+   * application qui se met à écrire à des gens sans qu'on l'ait demandé est
+   * une mauvaise surprise.
+   */
+  courriel: {
+    /** « journal » (rien ne part, tout est tracé), « smtp », ou « graph ». */
+    transport: lire('COURRIEL_TRANSPORT', 'journal'),
+    /** Adresse d'envoi. Pour Graph, une boîte réelle du locataire. */
+    expediteur: lire('COURRIEL_EXPEDITEUR', ''),
+    nomExpediteur: lire('COURRIEL_NOM_EXPEDITEUR', 'GMAO — maintenance'),
+    /** Adresse à qui répondre, si différente : le service technique. */
+    repondreA: lire('COURRIEL_REPONDRE_A', ''),
+    /**
+     * Adresse publique de la GMAO, pour que le courriel porte un lien
+     * cliquable vers l'ordre de travail. À défaut, celle du QR des
+     * étiquettes, qui désigne déjà la même application.
+     */
+    baseUrl: (lire('COURRIEL_BASE_URL', '') || lire('FORMULAIRE_BASE_QR', '')).replace(/\/+$/, ''),
+
+    smtp: {
+      hote: lire('COURRIEL_SMTP_HOTE', ''),
+      port: Number(lire('COURRIEL_SMTP_PORT', '587')),
+      utilisateur: lire('COURRIEL_SMTP_UTILISATEUR', ''),
+      motDePasse: lire('COURRIEL_SMTP_MOT_DE_PASSE', ''),
+    },
+
+    /**
+     * Microsoft Graph, mode application. Sans utilisateur derrière : rien à
+     * renouveler, rien à refaire quand quelqu'un change de poste.
+     *
+     * Exige la permission d'APPLICATION « Mail.Send » sur l'inscription, et
+     * le consentement d'un administrateur du locataire.
+     */
+    graph: {
+      tenantId: lire('COURRIEL_GRAPH_TENANT', ''),
+      clientId: lire('COURRIEL_GRAPH_CLIENT_ID', ''),
+      clientSecret: lire('COURRIEL_GRAPH_SECRET', ''),
+      base: lire('COURRIEL_GRAPH_BASE', 'https://graph.microsoft.com/v1.0'),
+      jetonBase: lire('COURRIEL_GRAPH_JETON_BASE', 'https://login.microsoftonline.com'),
+    },
+  },
+
   microsoft: {
     /**
      * Comment la GMAO s'authentifie auprès de Microsoft.
