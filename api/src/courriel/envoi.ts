@@ -1,3 +1,4 @@
+import { Resolver } from 'node:dns/promises';
 import { createTransport } from 'nodemailer';
 import { config } from '../config.ts';
 import { joindre } from '../integrations/reseau.ts';
@@ -183,9 +184,13 @@ export function messageGraph(corps: string): string {
   // centre d'administration, et le code seul ne dit pas lequel.
   if (/MailboxNotEnabledForRESTAPI|MailboxNotSupportedForRESTAPI/i.test(corps)) {
     return (
-      `« ${config.courriel.expediteur} » existe, mais sa boîte n’est pas exploitable par ` +
-      'Graph : boîte restée sur un serveur Exchange local, boîte inactive, ou objet sans ' +
-      'boîte du tout (groupe de distribution).'
+      `« ${config.courriel.expediteur} » existe, mais Graph n’y voit pas de boîte Exchange ` +
+      'Online. La cause la plus fréquente n’est pas un défaut de réglage : la messagerie du ' +
+      'domaine est hébergée ailleurs. Un locataire Entra ID ne met pas le courrier chez ' +
+      'Microsoft — l’enregistrement MX du domaine le dit. S’il ne pointe pas vers ' +
+      '« mail.protection.outlook.com », Graph ne pourra jamais envoyer : prenez ' +
+      'COURRIEL_TRANSPORT=smtp, avec le relais de l’hébergeur. Sinon : boîte restée sur un ' +
+      'Exchange local, boîte inactive, ou objet sans boîte.'
     );
   }
   if (/ResourceNotFound|ErrorInvalidUser|ErrorNonExistentMailbox|ObjectNotFound/i.test(corps)) {
@@ -198,6 +203,35 @@ export function messageGraph(corps: string): string {
     );
   }
   return corps.slice(0, 240) || 'réponse vide';
+}
+
+/**
+ * La messagerie du domaine est-elle hébergée par Microsoft 365 ?
+ *
+ * Graph n'envoie que depuis une boîte Exchange Online. Un locataire Entra ID
+ * ne garantit rien là-dessus : l'identité peut être chez Microsoft et le
+ * courrier ailleurs. Dans ce cas « Mail.Send » est accordé, le jeton est
+ * délivré, et l'envoi échoue sur une boîte pourtant bien vivante — rien, dans
+ * le refus, ne dit que la messagerie n'est tout simplement pas là.
+ *
+ * L'enregistrement MX du domaine tranche en une requête, sans identifiants.
+ */
+export async function hebergeurDeCourrier(adresse: string): Promise<{
+  microsoft365: boolean;
+  mx: string[];
+}> {
+  const domaine = adresse.split('@')[1];
+  if (!domaine) return { microsoft365: false, mx: [] };
+  try {
+    const r = new Resolver();
+    const enregistrements = await r.resolveMx(domaine);
+    const mx = enregistrements
+      .sort((a, b) => a.priority - b.priority)
+      .map((e) => e.exchange.toLowerCase());
+    return { microsoft365: mx.some((e) => e.endsWith('mail.protection.outlook.com')), mx };
+  } catch {
+    return { microsoft365: false, mx: [] };
+  }
 }
 
 /** Ce que l'annuaire sait de l'expéditeur, quand il veut bien le dire. */
@@ -273,9 +307,79 @@ export async function verifierExpediteur(): Promise<Expediteur> {
 /* SMTP                                                                */
 /* ------------------------------------------------------------------ */
 
-async function envoyerParSmtp(m: Message): Promise<Resultat> {
+/**
+ * Les refus d'un relais SMTP, dits en clair.
+ *
+ * nodemailer rend un code court et le texte brut du serveur. « EAUTH » ne
+ * dit pas qu'un mot de passe d'application est exigé, et « ESOCKET » ne dit
+ * pas que 465 et 587 ne se parlent pas de la même façon.
+ */
+export function messageSmtp(e: unknown): string {
+  const err = e as { code?: string; responseCode?: number; message?: string };
+  const code = err.code ?? '';
+  const texte = err.message ?? String(e);
   const c = config.courriel;
-  const transporteur = createTransport({
+
+  // nodemailer enveloppe la cause réseau dans un « ESOCKET » générique et ne
+  // laisse « ECONNREFUSED » que dans le message. S'en tenir au code faisait
+  // annoncer un échec TLS sur un port simplement fermé — et chercher du côté
+  // du chiffrement une panne qui n'a rien à y voir.
+  const signature = `${code} ${texte}`;
+
+  if (/ECONNREFUSED/.test(signature)) {
+    return `${c.smtp.hote}:${c.smtp.port} refuse la connexion. Vérifiez COURRIEL_SMTP_HOTE et COURRIEL_SMTP_PORT.`;
+  }
+  if (/ETIMEDOUT|ECONNECTION|EDNS|ENOTFOUND|EAI_AGAIN/.test(signature)) {
+    return (
+      `${c.smtp.hote}:${c.smtp.port} ne répond pas. Soit le nom est inexact, soit le port ` +
+      'sortant est fermé — depuis un conteneur, le 587 et le 465 le sont souvent par défaut.'
+    );
+  }
+  if (/EAUTH/.test(code) || err.responseCode === 535) {
+    return (
+      'le relais refuse l’authentification. Avec la double authentification activée, la ' +
+      'plupart des hébergeurs exigent un MOT DE PASSE D’APPLICATION dédié, et non le mot de ' +
+      'passe habituel de la boîte.'
+    );
+  }
+  if (/ESOCKET|ETLS|CERT|SELF_SIGNED|wrong version number/i.test(signature)) {
+    return (
+      `échec TLS avec ${c.smtp.hote}:${c.smtp.port}. Le 465 est chiffré d’emblée, le 587 ` +
+      'commence en clair et bascule par STARTTLS : les intervertir donne exactement cette erreur.'
+    );
+  }
+  if (/EENVELOPE/.test(code) || err.responseCode === 553 || err.responseCode === 550) {
+    return (
+      `l’adresse d’envoi « ${c.expediteur} » est refusée. La plupart des relais n’acceptent ` +
+      'que l’adresse du compte authentifié, ou l’un de ses alias vérifiés : COURRIEL_EXPEDITEUR ' +
+      'et COURRIEL_SMTP_UTILISATEUR doivent désigner la même boîte.'
+    );
+  }
+  return code ? `${texte} (${code})` : texte;
+}
+
+/**
+ * Éprouve la connexion et l'authentification, sans envoyer.
+ *
+ * Distingue « le relais est injoignable » de « il refuse le mot de passe » de
+ * « il refuse l'expéditeur » — trois réparations différentes, que le seul
+ * échec d'un envoi ne sépare pas.
+ */
+export async function verifierSmtp(): Promise<{ ok: boolean; detail: string }> {
+  const c = config.courriel;
+  if (c.transport !== 'smtp' || !courrielActif()) return { ok: false, detail: 'sans objet' };
+  try {
+    await transporteurSmtp().verify();
+    return { ok: true, detail: `${c.smtp.hote}:${c.smtp.port} accepte la connexion` };
+  } catch (e) {
+    return { ok: false, detail: messageSmtp(e) };
+  }
+}
+
+/** Le relais configuré, monté une fois par envoi. */
+function transporteurSmtp() {
+  const c = config.courriel;
+  return createTransport({
     host: c.smtp.hote,
     port: c.smtp.port,
     // 465 est chiffré d'emblée ; 587 commence en clair et bascule par STARTTLS.
@@ -284,8 +388,11 @@ async function envoyerParSmtp(m: Message): Promise<Resultat> {
     connectionTimeout: 20_000,
     greetingTimeout: 20_000,
   });
+}
 
-  const info = await transporteur.sendMail({
+async function envoyerParSmtp(m: Message): Promise<Resultat> {
+  const c = config.courriel;
+  const info = await transporteurSmtp().sendMail({
     from: c.nomExpediteur ? `${c.nomExpediteur} <${c.expediteur}>` : c.expediteur,
     to: m.a.join(', '),
     replyTo: c.repondreA || undefined,
@@ -324,6 +431,10 @@ export async function envoyer(m: Message): Promise<Resultat> {
   try {
     return c.transport === 'graph' ? await envoyerParGraph(m) : await envoyerParSmtp(m);
   } catch (e) {
-    return { transport: c.transport, envoye: false, detail: (e as Error).message };
+    return {
+      transport: c.transport,
+      envoye: false,
+      detail: c.transport === 'smtp' ? messageSmtp(e) : (e as Error).message,
+    };
   }
 }
