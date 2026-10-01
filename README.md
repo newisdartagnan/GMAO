@@ -1143,6 +1143,69 @@ l'inscription d'application :
 > boîte du locataire. Pour la restreindre à la seule boîte de la GMAO, voir
 > `ApplicationAccessPolicy` côté Exchange Online.
 
+### Où trouver les trois valeurs
+
+Une inscription **à part** de celle du connecteur de formulaire. Celle-ci est
+un client public, sans secret, qui agit au nom d'une personne ; la messagerie
+agit pour elle-même et porte un secret. Les mélanger, c'est faire dépendre
+l'envoi des courriels du compte de quelqu'un.
+
+**1. Créer l'inscription.** Entra ID → Inscriptions d'applications →
+Nouvelle inscription.
+
+| Champ | Valeur |
+|---|---|
+| Nom | `GMAO — envoi de courriel` |
+| Types de comptes pris en charge | Comptes de cet annuaire d'organisation uniquement |
+| URI de redirection | **laisser vide** — personne ne se connecte, l'application agit seule |
+
+**2. `COURRIEL_GRAPH_CLIENT_ID` et `COURRIEL_GRAPH_TENANT`** se lisent sur la
+page *Vue d'ensemble* de l'inscription, juste après sa création :
+
+```
+ID d'application (client)   11111111-2222-3333-4444-555555555555  → CLIENT_ID
+ID d'annuaire (locataire)   66666666-7777-8888-9999-000000000000  → TENANT
+```
+
+Attention à ne pas confondre avec l'**ID d'objet**, affiché sur la même page
+et qui ne sert pas ici. Pour le locataire, le domaine vérifié convient aussi
+(`monkole.cd`), mais l'identifiant ne dépend d'aucun renommage.
+
+**3. `COURRIEL_GRAPH_SECRET`.** Certificats et secrets → Nouveau secret
+client → une description, une échéance.
+
+> Copier la colonne **Valeur**, pas « ID de secret ». La valeur n'est
+> affichée **qu'une fois** : en quittant la page elle est masquée
+> définitivement, et il faut en créer un autre. C'est l'erreur la plus
+> fréquente — la GMAO la reconnaît et le dit.
+
+Un secret expire. Notez l'échéance : le jour venu, les courriels s'arrêtent,
+et `tester-courriel` dira pourquoi.
+
+**4. La permission.** API autorisées → Ajouter une autorisation → Microsoft
+Graph → **Autorisations d'application** (pas « déléguées ») → `Mail.Send` →
+Ajouter. Puis **Accorder un consentement administrateur pour …**, qui exige
+un rôle d'administrateur. Sans ce clic, la colonne *État* reste orange et
+l'envoi échouera en 403.
+
+**5. La boîte d'envoi.** `COURRIEL_EXPEDITEUR` doit être une boîte réelle du
+locataire. Une **boîte partagée** convient et ne consomme pas de licence :
+Centre d'administration Microsoft 365 → Équipes et groupes → Boîtes aux
+lettres partagées → `gmao@monkole.cd`.
+
+### Quand ça ne marche pas
+
+`tester-courriel` nomme la ligne à corriger plutôt que de rendre un code :
+
+| Ce qui s'affiche | Ce qu'il faut faire |
+|---|---|
+| `le secret est refusé … attend la VALEUR` | recopier la colonne Valeur, pas l'ID de secret |
+| `le secret a expiré` | en créer un nouveau |
+| `le locataire « … » est introuvable` | reprendre l'ID d'annuaire (locataire) |
+| `l'application « … » n'existe pas dans ce locataire` | reprendre l'ID d'application (client), pas l'ID d'objet |
+| `accès refusé. La permission d'APPLICATION « Mail.Send »…` | le consentement administrateur n'a pas été accordé |
+| `la boîte « … » n'existe pas ou n'a pas de licence` | créer la boîte partagée, ou corriger l'adresse |
+
 **`smtp` marche avec à peu près tout.** Sur Exchange Online en revanche,
 l'authentification de base pour SMTP est désactivée par défaut à partir de
 fin 2026 : utilisable aujourd'hui, à ne pas bâtir dessus.

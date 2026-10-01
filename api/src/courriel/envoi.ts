@@ -101,12 +101,45 @@ async function jetonApplication(): Promise<string> {
     error_description?: string;
   };
   if (!r.ok || !donnees.access_token) {
-    throw new Error(
-      `Microsoft a refusé le jeton d’envoi : ${donnees.error_description?.split('\n')[0] ?? `HTTP ${r.status}`}`,
-    );
+    throw new Error(`Microsoft a refusé le jeton d’envoi : ${messageJeton(donnees.error_description, r.status)}`);
   }
   jetonGraph = { valeur: donnees.access_token, expireLe: Date.now() + (donnees.expires_in ?? 3600) * 1000 };
   return jetonGraph.valeur;
+}
+
+/**
+ * Les refus de Microsoft à la demande de jeton, dits en clair.
+ *
+ * Ces quatre-là sont ceux qu'on rencontre en remplissant les trois lignes de
+ * configuration, et le code AADSTS seul ne dit pas laquelle est en cause :
+ * « AADSTS7000215 » ne désigne pas le secret pour qui ne le sait pas déjà.
+ * Le message nomme la variable à corriger.
+ */
+export function messageJeton(description: string | undefined, statut: number): string {
+  const d = description?.split('\n')[0] ?? `HTTP ${statut}`;
+
+  if (/AADSTS7000215/.test(d)) {
+    return (
+      'le secret est refusé. COURRIEL_GRAPH_SECRET attend la VALEUR du secret, ' +
+      'celle qui n’est affichée qu’une fois à sa création — pas son « ID de secret ».'
+    );
+  }
+  if (/AADSTS7000222/.test(d)) {
+    return 'le secret a expiré. En créer un nouveau dans Certificats et secrets, et remplacer COURRIEL_GRAPH_SECRET.';
+  }
+  if (/AADSTS90002/.test(d)) {
+    return (
+      `le locataire « ${config.courriel.graph.tenantId} » est introuvable. COURRIEL_GRAPH_TENANT attend ` +
+      'l’identifiant de locataire (Entra ID → Vue d’ensemble) ou un domaine vérifié du locataire.'
+    );
+  }
+  if (/AADSTS700016|AADSTS70001/.test(d)) {
+    return (
+      `l’application « ${config.courriel.graph.clientId} » n’existe pas dans ce locataire. ` +
+      'COURRIEL_GRAPH_CLIENT_ID attend l’« ID d’application (client) », pas l’ID d’objet ni l’ID de répertoire.'
+    );
+  }
+  return d;
 }
 
 async function envoyerParGraph(m: Message): Promise<Resultat> {

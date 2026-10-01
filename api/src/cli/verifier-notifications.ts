@@ -1,6 +1,7 @@
 import { affecterOT, construireBaseDemo } from '@gmao/partage';
 import type { BaseGMAO } from '@gmao/partage';
 import { affectationsNouvelles, messageAffectation } from '../courriel/affectation.ts';
+import { messageJeton } from '../courriel/envoi.ts';
 
 /**
  * Contrôle des notifications d'affectation.
@@ -129,6 +130,30 @@ console.log('\nCe que le technicien lit');
   const m = messageAffectation(base, nu, technicien);
   verifier('aucun « undefined » ne traverse', /undefined/.test(m.texte + m.html), false);
   verifier('l’absence d’équipement est dite', m.texte.includes('Équipement        aucun'), true);
+}
+
+/* ================================================================== */
+console.log('\nCe que Microsoft refuse, et la ligne à corriger');
+
+{
+  // Ces quatre refus sont ceux qu'on rencontre en remplissant les trois
+  // lignes de configuration. Le code AADSTS seul ne dit pas laquelle est en
+  // cause : le message doit nommer la variable.
+  const refus: [string, string, RegExp][] = [
+    ['secret invalide → la valeur, pas l’ID', 'AADSTS7000215: Invalid client secret provided.', /COURRIEL_GRAPH_SECRET.*VALEUR/s],
+    ['secret expiré → en créer un', 'AADSTS7000222: The provided client secret keys are expired.', /expiré/],
+    ['locataire introuvable', 'AADSTS90002: Tenant not found.', /COURRIEL_GRAPH_TENANT/],
+    ['application introuvable', 'AADSTS700016: Application not found in the directory.', /COURRIEL_GRAPH_CLIENT_ID/],
+  ];
+  for (const [intitule, brut, attendu] of refus) {
+    verifier(intitule, attendu.test(messageJeton(brut, 401)), true);
+  }
+  verifier(
+    'un refus inconnu passe tel quel, sans supposition',
+    messageJeton('AADSTS99999: quelque chose de neuf', 400),
+    'AADSTS99999: quelque chose de neuf',
+  );
+  verifier('sans description, le code HTTP suffit', messageJeton(undefined, 503), 'HTTP 503');
 }
 
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);
