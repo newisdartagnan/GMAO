@@ -1,7 +1,7 @@
 import { affecterOT, construireBaseDemo } from '@gmao/partage';
 import type { BaseGMAO } from '@gmao/partage';
 import { affectationsNouvelles, messageAffectation } from '../courriel/affectation.ts';
-import { messageGraph, messageJeton } from '../courriel/envoi.ts';
+import { hebergeurDeCourrier, messageGraph, messageJeton, messageSmtp } from '../courriel/envoi.ts';
 
 /**
  * Contrôle des notifications d'affectation.
@@ -181,6 +181,61 @@ console.log('\nPourquoi la boîte d’envoi est refusée');
     messageGraph('quelque chose de neuf').startsWith('quelque chose de neuf'),
     true,
   );
+}
+
+/* ================================================================== */
+console.log('\nPourquoi le relais SMTP refuse');
+
+{
+  // nodemailer enveloppe la cause réseau dans un « ESOCKET » générique et ne
+  // laisse le vrai motif que dans le message. S'en tenir au code faisait
+  // annoncer un échec TLS sur un port simplement fermé.
+  const refus = (code: string, message: string, responseCode?: number) =>
+    messageSmtp(Object.assign(new Error(message), { code, responseCode }));
+
+  verifier(
+    'port fermé : ce n’est pas un échec TLS',
+    /refuse la connexion/.test(refus('ESOCKET', 'connect ECONNREFUSED 127.0.0.1:587')),
+    true,
+  );
+  verifier('hôte introuvable', /ne répond pas/.test(refus('ESOCKET', 'getaddrinfo ENOTFOUND smtp.x')), true);
+  verifier(
+    'mot de passe refusé : le mot de passe d’application',
+    /MOT DE PASSE D’APPLICATION/.test(refus('EAUTH', 'Invalid login', 535)),
+    true,
+  );
+  verifier(
+    '465 et 587 intervertis',
+    /465 est chiffré d’emblée/.test(refus('ESOCKET', 'wrong version number')),
+    true,
+  );
+  verifier(
+    'expéditeur refusé : même boîte que le compte',
+    /COURRIEL_SMTP_UTILISATEUR/.test(refus('EENVELOPE', 'Mail from not allowed', 553)),
+    true,
+  );
+  verifier('un refus inconnu garde son texte', refus('', 'quelque chose'), 'quelque chose');
+}
+
+/* ================================================================== */
+console.log('\nOù vit la messagerie du domaine');
+
+{
+  // Graph n'envoie que depuis une boîte Exchange Online. Un locataire Entra
+  // ID ne garantit rien là-dessus, et le refus d'envoi ne le dit pas : seul
+  // l'enregistrement MX tranche.
+  const microsoft = await hebergeurDeCourrier('x@microsoft.com');
+  verifier('un domaine sans « @ » ne cherche rien', await hebergeurDeCourrier('sansarobase'), {
+    microsoft365: false,
+    mx: [],
+  });
+  verifier('un domaine inexistant ne fait pas échouer', await hebergeurDeCourrier('x@invalide.invalid'), {
+    microsoft365: false,
+    mx: [],
+  });
+  // Le test ne dépend pas d'un domaine tiers précis : il vérifie la forme de
+  // la réponse, pas chez qui tel établissement héberge son courrier.
+  verifier('la réponse a toujours la bonne forme', Array.isArray(microsoft.mx), true);
 }
 
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);

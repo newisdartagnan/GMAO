@@ -1135,7 +1135,23 @@ sans qu'on l'ait demandé est une mauvaise surprise. Dans ce mode, le message
 est écrit dans les traces de l'API : on peut juger le contenu avant d'avoir
 un compte d'envoi.
 
-**`graph` est la voie durable** pour un établissement sur Microsoft 365. Le
+> **Vérifiez d'abord où vit votre courrier.** `graph` n'envoie que depuis une
+> boîte **Exchange Online**. Avoir un locataire Entra ID ne met pas le
+> courrier chez Microsoft : l'identité peut être chez eux et la messagerie
+> ailleurs. L'enregistrement MX du domaine tranche en une commande :
+>
+> ```bash
+> nslookup -type=mx monkole.cd
+> ```
+>
+> S'il pointe vers `*.mail.protection.outlook.com`, `graph` convient. Sinon —
+> Zoho, Google Workspace, un Exchange local, un hébergeur quelconque — `graph`
+> ne pourra **jamais** envoyer, quels que soient les réglages : prenez `smtp`
+> avec le relais de cet hébergeur. `tester-courriel` fait ce contrôle tout
+> seul et le dit.
+
+**`graph` est la voie durable** pour un établissement dont les boîtes sont sur
+Exchange Online. Le
 mode application n'a pas d'utilisateur derrière : aucun jeton à renouveler,
 rien à refaire quand quelqu'un change de poste. Dans Entra ID, sur
 l'inscription d'application :
@@ -1271,9 +1287,32 @@ et le symptôme est le même que lorsqu'on n'a rien écrit du tout —
 `verifier-configuration.sh` distingue désormais les deux : il dit « absent de
 .env » plutôt que d'annoncer une valeur que personne n'a écrite.
 
-**`smtp` marche avec à peu près tout.** Sur Exchange Online en revanche,
-l'authentification de base pour SMTP est désactivée par défaut à partir de
-fin 2026 : utilisable aujourd'hui, à ne pas bâtir dessus.
+**`smtp` marche avec à peu près tout**, et c'est la seule voie quand la
+messagerie n'est pas chez Microsoft. L'échéance de fin 2026 sur
+l'authentification de base ne concerne qu'Exchange Online : elle ne s'applique
+pas à un autre hébergeur.
+
+| Réglage | Ce qu'il attend |
+|---|---|
+| `COURRIEL_SMTP_HOTE` | le serveur sortant de l'hébergeur — le même que dans Outlook ou Thunderbird |
+| `COURRIEL_SMTP_PORT` | `587` (STARTTLS) ou `465` (chiffré d'emblée). Les intervertir donne une erreur TLS |
+| `COURRIEL_SMTP_UTILISATEUR` | l'adresse complète de la boîte |
+| `COURRIEL_SMTP_MOT_DE_PASSE` | avec la double authentification, un **mot de passe d'application**, pas celui de la boîte |
+
+`COURRIEL_EXPEDITEUR` doit désigner **la même boîte** que
+`COURRIEL_SMTP_UTILISATEUR`, ou l'un de ses alias vérifiés : la plupart des
+relais refusent d'envoyer au nom d'un tiers.
+
+`tester-courriel` éprouve la connexion et l'authentification **avant**
+d'envoyer, et nomme ce qui coince :
+
+| Ce qui s'affiche | Ce qu'il faut faire |
+|---|---|
+| `refuse la connexion` | hôte ou port inexact |
+| `ne répond pas` | nom inexact, ou port sortant fermé — fréquent depuis un conteneur |
+| `refuse l'authentification` | mot de passe d'application exigé |
+| `465 est chiffré d'emblée, le 587…` | les deux ports sont intervertis |
+| `l'adresse d'envoi « … » est refusée` | expéditeur ≠ compte authentifié |
 
 ### Éprouver sans toucher à un ordre de travail réel
 

@@ -5,7 +5,14 @@ import { migrer } from '../db/migrations.ts';
 import { pool } from '../db/pool.ts';
 import { chargerBase } from '../db/charger.ts';
 import { messageAffectation } from '../courriel/affectation.ts';
-import { courrielActif, envoyer, manquePourEnvoyer, verifierExpediteur } from '../courriel/envoi.ts';
+import {
+  courrielActif,
+  envoyer,
+  hebergeurDeCourrier,
+  manquePourEnvoyer,
+  verifierExpediteur,
+  verifierSmtp,
+} from '../courriel/envoi.ts';
 
 /**
  * Éprouve la notification, sans toucher à un ordre de travail réel.
@@ -47,6 +54,21 @@ if (!courrielActif()) {
   const e = await verifierExpediteur();
   const marque = e.etat === 'trouve' ? '✔' : e.etat === 'absent' ? '✘' : '·';
   console.log(`\n  ${marque} Boîte d’envoi  ${e.detail}`);
+
+  // Le contrôle qui évite une demi-journée : Graph n'envoie que depuis une
+  // boîte Exchange Online, et un locataire Entra ID ne met pas le courrier
+  // chez Microsoft pour autant.
+  const h = await hebergeurDeCourrier(config.courriel.expediteur);
+  if (h.mx.length && !h.microsoft365) {
+    console.log(`  ✘ Hébergeur       ${h.mx[0]} — la messagerie du domaine n’est pas chez Microsoft 365`);
+    console.log('                    Graph ne pourra pas envoyer, quels que soient les réglages.');
+    console.log('                    Prenez COURRIEL_TRANSPORT=smtp, avec le relais de cet hébergeur.');
+  } else if (h.microsoft365) {
+    console.log(`  ✔ Hébergeur       ${h.mx[0]} — Microsoft 365`);
+  }
+} else if (config.courriel.transport === 'smtp') {
+  const v = await verifierSmtp();
+  console.log(`\n  ${v.ok ? '✔' : '✘'} Relais         ${v.detail}`);
 }
 
 // Un ordre de travail réel si la base en a un, sinon celui de la
