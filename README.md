@@ -56,6 +56,12 @@ lancement : il ne restera qu'à créer les comptes d'accès.
 ./scripts/mettre-a-jour.sh
 ```
 
+Les deux images se construisent séparément. Un incident d'accès au registre
+Docker — « TLS handshake timeout », fréquent sur une liaison instable —
+n'emporte plus que l'image concernée : si seule l'interface web échoue,
+l'API est tout de même mise à jour, et la pile continue avec l'interface
+précédente.
+
 **`docker compose up -d` ne suffit pas.** Compose constate que les conteneurs
 tournent et ne fait rien : le code fraîchement récupéré reste sur le disque
 sans jamais entrer dans la pile, et l'application continue de servir
@@ -1225,6 +1231,13 @@ un code :
 Un commentaire en fin de ligne est permis dans `.env`, à condition de laisser
 une espace avant le `#` : `COURRIEL_TRANSPORT=graph #journal` vaut bien
 `graph`. Sans l'espace, `graph#journal` est pris tel quel et refusé.
+
+**C'est bien `.env` qu'il faut modifier, pas `.env.example`.** Le second n'est
+qu'un modèle : Compose ne le lit jamais. Un réglage écrit là n'a aucun effet,
+et le symptôme est le même que lorsqu'on n'a rien écrit du tout —
+`tester-courriel` affiche le mode `journal` et un expéditeur vide.
+`verifier-configuration.sh` distingue désormais les deux : il dit « absent de
+.env » plutôt que d'annoncer une valeur que personne n'a écrite.
 
 **`smtp` marche avec à peu près tout.** Sur Exchange Online en revanche,
 l'authentification de base pour SMTP est désactivée par défaut à partir de

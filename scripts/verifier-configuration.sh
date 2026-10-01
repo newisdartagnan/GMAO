@@ -42,8 +42,24 @@ fi
 # Lecture sans exécuter le fichier : une valeur qui contient un espace ou
 # un caractère de shell ne doit pas être interprétée. Le « [[:space:]]* »
 # final retire au passage le retour chariot d'un fichier en CRLF.
+#
+# Le commentaire de fin de ligne est retiré comme le fait Docker Compose :
+# seulement s'il est précédé d'une espace. « graph #journal » vaut donc
+# « graph », et « graph#journal » reste tel quel — c'est ce que verra le
+# conteneur, et ce contrôle doit dire la même chose que lui.
 lire() {
-  sed -n "s/^[[:space:]]*$1=//p" "$ENV_FICHIER" | tail -1 | sed 's/[[:space:]]*$//'
+  sed -n "s/^[[:space:]]*$1=//p" "$ENV_FICHIER" | tail -1 |
+    sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//'
+}
+
+# La variable figure-t-elle dans le fichier, ne serait-ce que vide ?
+#
+# « absente » et « réglée sur le défaut » ne se soignent pas pareil :
+# annoncer une valeur que personne n'a écrite envoie chercher au mauvais
+# endroit — dans le .env qu'on vient de remplir, alors que c'est un autre
+# fichier qui a été modifié.
+presente() {
+  grep -qE "^[[:space:]]*$1=" "$ENV_FICHIER"
 }
 
 compter() {
@@ -191,7 +207,16 @@ echo
 echo "Notification du technicien par courriel"
 echo "---------------------------------------"
 transport="$(lire COURRIEL_TRANSPORT)"
+if ! presente COURRIEL_TRANSPORT; then
+  orange "• COURRIEL_TRANSPORT est absent de $ENV_FICHIER — le défaut « journal »"
+  orange "  s'applique, donc aucun courriel ne part. Si vous l'avez renseigné"
+  orange "  ailleurs, c'est $ENV_FICHIER que lisent Compose et ce contrôle :"
+  orange "  le bloc se recopie depuis .env.example."
+  avertissements=$((avertissements + 1))
+  transport=absent
+fi
 case "${transport:-journal}" in
+  absent) ;;
   journal)
     orange "• COURRIEL_TRANSPORT vaut « journal » — aucun courriel ne part."
     orange "  Les messages sont écrits dans les traces de l'API. Pour les voir :"
