@@ -1,7 +1,7 @@
 import { affecterOT, construireBaseDemo } from '@gmao/partage';
 import type { BaseGMAO } from '@gmao/partage';
 import { affectationsNouvelles, messageAffectation } from '../courriel/affectation.ts';
-import { messageJeton } from '../courriel/envoi.ts';
+import { messageGraph, messageJeton } from '../courriel/envoi.ts';
 
 /**
  * Contrôle des notifications d'affectation.
@@ -154,6 +154,33 @@ console.log('\nCe que Microsoft refuse, et la ligne à corriger');
     'AADSTS99999: quelque chose de neuf',
   );
   verifier('sans description, le code HTTP suffit', messageJeton(undefined, 503), 'HTTP 503');
+}
+
+/* ================================================================== */
+console.log('\nPourquoi la boîte d’envoi est refusée');
+
+{
+  // Graph rend « 404 » dans deux situations qui ne se réparent pas au même
+  // endroit : l'objet n'existe pas, ou il existe sans boîte exploitable.
+  // Les confondre envoie créer une boîte qui est déjà là.
+  const absent = messageGraph('{"error":{"code":"ResourceNotFound","message":"Resource could not be discovered."}}');
+  verifier('objet introuvable : les trois causes sont nommées', /ALIAS/.test(absent) && /groupe/.test(absent), true);
+  verifier('et la boîte partagée est rappelée', /partagée/.test(absent), true);
+
+  const sansBoite = messageGraph('{"error":{"code":"MailboxNotEnabledForRESTAPI"}}');
+  verifier('boîte non exploitable : dit « existe, mais »', /existe, mais/.test(sansBoite), true);
+  verifier('et ne renvoie pas créer ce qui existe', /la boîte n’existe pas/.test(sansBoite), false);
+
+  verifier(
+    'accès refusé : le consentement administrateur',
+    /consentement administrateur/.test(messageGraph('{"error":{"code":"ErrorAccessDenied"}}')),
+    true,
+  );
+  verifier(
+    'un refus inconnu passe tel quel',
+    messageGraph('quelque chose de neuf').startsWith('quelque chose de neuf'),
+    true,
+  );
 }
 
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);

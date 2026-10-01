@@ -170,7 +170,7 @@ async function envoyerParGraph(m: Message): Promise<Resultat> {
 }
 
 /** Les refus de Graph les plus fréquents, traduits en geste à faire. */
-function messageGraph(corps: string): string {
+export function messageGraph(corps: string): string {
   if (/ErrorAccessDenied|Access is denied/i.test(corps)) {
     return (
       'accès refusé. La permission d’APPLICATION « Mail.Send » doit être accordée à ' +
@@ -178,10 +178,95 @@ function messageGraph(corps: string): string {
       'd’applications → API autorisées → Accorder un consentement administrateur).'
     );
   }
-  if (/ResourceNotFound|MailboxNotEnabled|ErrorInvalidUser/i.test(corps)) {
-    return `la boîte « ${config.courriel.expediteur} » n’existe pas ou n’a pas de licence de messagerie.`;
+  // Graph distingue « cet objet n'existe pas » de « il existe mais n'a pas de
+  // boîte exploitable ». Les deux se réparent à des endroits différents du
+  // centre d'administration, et le code seul ne dit pas lequel.
+  if (/MailboxNotEnabledForRESTAPI|MailboxNotSupportedForRESTAPI/i.test(corps)) {
+    return (
+      `« ${config.courriel.expediteur} » existe, mais sa boîte n’est pas exploitable par ` +
+      'Graph : boîte restée sur un serveur Exchange local, boîte inactive, ou objet sans ' +
+      'boîte du tout (groupe de distribution).'
+    );
+  }
+  if (/ResourceNotFound|ErrorInvalidUser|ErrorNonExistentMailbox|ObjectNotFound/i.test(corps)) {
+    return (
+      `Graph ne trouve aucune boîte à « ${config.courriel.expediteur} ». Trois causes, par ` +
+      'ordre de fréquence : (1) c’est un ALIAS et non l’adresse principale — Graph exige ' +
+      'l’adresse principale, ou le nom d’utilisateur principal ; (2) c’est un groupe ou une ' +
+      'liste de distribution, qui ne peut pas envoyer ; (3) la boîte n’existe pas. Une boîte ' +
+      'partagée convient et ne consomme pas de licence.'
+    );
   }
   return corps.slice(0, 240) || 'réponse vide';
+}
+
+/** Ce que l'annuaire sait de l'expéditeur, quand il veut bien le dire. */
+export interface Expediteur {
+  etat: 'trouve' | 'absent' | 'inconnu';
+  detail: string;
+}
+
+/**
+ * Interroge l'annuaire sur l'adresse d'envoi.
+ *
+ * Un « 404 » au moment d'envoyer ne dit pas si l'adresse désigne un objet
+ * inexistant ou un objet sans boîte — et la réparation n'est pas la même.
+ * Cette vérification sépare les deux.
+ *
+ * Elle demande « User.Read.All », que l'envoi n'exige pas. Ne pas l'avoir
+ * n'est donc pas une anomalie : la fonction le dit et s'arrête là, plutôt
+ * que de faire passer une permission facultative pour un défaut.
+ */
+export async function verifierExpediteur(): Promise<Expediteur> {
+  const c = config.courriel;
+  if (c.transport !== 'graph' || !courrielActif()) return { etat: 'inconnu', detail: 'sans objet' };
+
+  try {
+    const jeton = await jetonApplication();
+    const url =
+      `${c.graph.base}/users/${encodeURIComponent(c.expediteur)}` +
+      '?$select=displayName,mail,userPrincipalName,accountEnabled';
+    const r = await joindre(url, {
+      headers: { Authorization: `Bearer ${jeton}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (r.status === 403) {
+      return {
+        etat: 'inconnu',
+        detail: 'annuaire non consultable (User.Read.All non accordé) — sans conséquence pour l’envoi',
+      };
+    }
+    if (r.status === 404) {
+      return {
+        etat: 'absent',
+        detail:
+          'aucun objet d’annuaire à cette adresse — c’est un alias, un groupe, ' +
+          'ou l’adresse est inexacte',
+      };
+    }
+    if (!r.ok) return { etat: 'inconnu', detail: `annuaire : HTTP ${r.status}` };
+
+    const u = (await r.json()) as {
+      displayName?: string;
+      mail?: string;
+      userPrincipalName?: string;
+      accountEnabled?: boolean;
+    };
+    const principale = u.mail ?? u.userPrincipalName ?? '';
+    // Si l'adresse configurée n'est pas l'adresse principale, c'est un alias :
+    // l'envoi peut échouer alors que l'objet existe bel et bien.
+    const alias = principale && principale.toLowerCase() !== c.expediteur.toLowerCase();
+    return {
+      etat: 'trouve',
+      detail:
+        `${u.displayName ?? '(sans nom)'} — ${principale}` +
+        (alias ? ` — ATTENTION : adresse principale différente, mettez celle-ci dans COURRIEL_EXPEDITEUR` : '') +
+        (u.accountEnabled === false ? ' — compte désactivé' : ''),
+    };
+  } catch (e) {
+    return { etat: 'inconnu', detail: (e as Error).message };
+  }
 }
 
 /* ------------------------------------------------------------------ */
