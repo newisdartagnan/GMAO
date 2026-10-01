@@ -41,11 +41,36 @@ fi
 # ---------------------------------------------------------------------
 titre "2. Reconstruction des images"
 echo "Le code récupéré n'entre dans la pile que par une reconstruction."
-if ! compose build api web; then
-  rouge "✘ La construction a échoué. Rien n'a été redémarré, la pile tourne toujours."
-  exit 1
-fi
-vert "✔ Images reconstruites"
+# Les deux images se construisent SÉPARÉMENT, et non « build api web ».
+# Construites ensemble, l'échec de l'une annule l'autre : un incident de
+# réseau sur l'image de base de nginx — fréquent depuis Kinshasa — emportait
+# la construction de l'API, qui n'en a pourtant pas besoin. L'API porte les
+# correctifs ; mieux vaut la mettre à jour seule que rien du tout.
+echecs=""
+for service in api web; do
+  if compose build "$service"; then
+    vert "✔ Image $service reconstruite"
+  else
+    rouge "✘ Image $service : construction échouée"
+    echecs="$echecs $service"
+  fi
+done
+
+case "$echecs" in
+  "")
+    ;;
+  *" api"*)
+    rouge "✘ L'API n'a pas pu être reconstruite. Rien n'a été redémarré."
+    echo "   Si l'échec parle de « TLS handshake timeout » ou de registry.docker.io,"
+    echo "   c'est l'accès au registre, pas le code : réessayer suffit souvent."
+    exit 1
+    ;;
+  *)
+    orange "• Seule l'interface web n'a pas pu être reconstruite ; l'API, si."
+    orange "  La pile continue avec l'interface précédente, qui reste utilisable."
+    orange "  Pour la rattraper plus tard :  docker compose build web && docker compose up -d web"
+    ;;
+esac
 
 # ---------------------------------------------------------------------
 titre "3. Redémarrage"
