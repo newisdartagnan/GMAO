@@ -1195,7 +1195,23 @@ lettres partagées → `gmao@monkole.cd`.
 
 ### Quand ça ne marche pas
 
-`tester-courriel` nomme la ligne à corriger plutôt que de rendre un code :
+**D'abord : le réglage arrive-t-il jusqu'au conteneur ?** `docker-compose.yml`
+énumère les variables transmises à l'API, une par une. Un réglage ajouté au
+`.env` mais absent de cette liste ne se voit nulle part : le fichier est
+juste, le code est juste, et le conteneur applique la valeur par défaut en
+silence. Le symptôme est reconnaissable — `tester-courriel` affiche le mode
+`journal` et un expéditeur vide alors que `.env` dit autre chose.
+
+```bash
+docker compose exec api npm run verifier-compose --workspace=api
+```
+
+Ce contrôle tourne aussi à chaque `./scripts/mettre-a-jour.sh`. Il porte sur
+le compose embarqué dans l'image, pas sur celui du dépôt : un dépôt mis à
+jour sans reconstruction dirait le contraire de ce qui tourne.
+
+**Ensuite :** `tester-courriel` nomme la ligne à corriger plutôt que de rendre
+un code :
 
 | Ce qui s'affiche | Ce qu'il faut faire |
 |---|---|
@@ -1205,6 +1221,10 @@ lettres partagées → `gmao@monkole.cd`.
 | `l'application « … » n'existe pas dans ce locataire` | reprendre l'ID d'application (client), pas l'ID d'objet |
 | `accès refusé. La permission d'APPLICATION « Mail.Send »…` | le consentement administrateur n'a pas été accordé |
 | `la boîte « … » n'existe pas ou n'a pas de licence` | créer la boîte partagée, ou corriger l'adresse |
+
+Un commentaire en fin de ligne est permis dans `.env`, à condition de laisser
+une espace avant le `#` : `COURRIEL_TRANSPORT=graph #journal` vaut bien
+`graph`. Sans l'espace, `graph#journal` est pris tel quel et refusé.
 
 **`smtp` marche avec à peu près tout.** Sur Exchange Online en revanche,
 l'authentification de base pour SMTP est désactivée par défaut à partir de

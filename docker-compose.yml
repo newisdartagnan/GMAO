@@ -60,6 +60,7 @@ services:
       DB_NAME: ${DB_NAME:-gmao}
       DB_USER: ${DB_USER:-gmao}
       DB_PASSWORD: ${DB_PASSWORD:?définir DB_PASSWORD dans le fichier .env}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
       JWT_SECRET: ${JWT_SECRET:?définir JWT_SECRET dans le fichier .env}
       JWT_DUREE: ${JWT_DUREE:-12h}
       # L'interface et l'API partagent la même origine derrière nginx :
@@ -86,9 +87,27 @@ services:
       MSFORMS_CLIENT_SECRET: ${MSFORMS_CLIENT_SECRET:-}
       MSFORMS_CLASSEUR: ${MSFORMS_CLASSEUR:-}
       MSFORMS_TABLEAU: ${MSFORMS_TABLEAU:-Tableau1}
+      MSFORMS_GRAPH_BASE: ${MSFORMS_GRAPH_BASE:-https://graph.microsoft.com/v1.0}
+      MSFORMS_JETON_BASE: ${MSFORMS_JETON_BASE:-https://login.microsoftonline.com}
       JOTFORM_API_KEY: ${JOTFORM_API_KEY:-}
       JOTFORM_FORMULAIRE_ID: ${JOTFORM_FORMULAIRE_ID:-}
       JOTFORM_API_BASE: ${JOTFORM_API_BASE:-https://api.jotform.com}
+      # Notification du technicien par courriel. « journal » par défaut :
+      # rien ne part tant qu'un transport n'est pas choisi.
+      COURRIEL_TRANSPORT: ${COURRIEL_TRANSPORT:-journal}
+      COURRIEL_EXPEDITEUR: ${COURRIEL_EXPEDITEUR:-}
+      COURRIEL_NOM_EXPEDITEUR: ${COURRIEL_NOM_EXPEDITEUR:-GMAO}
+      COURRIEL_REPONDRE_A: ${COURRIEL_REPONDRE_A:-}
+      COURRIEL_BASE_URL: ${COURRIEL_BASE_URL:-}
+      COURRIEL_SMTP_HOTE: ${COURRIEL_SMTP_HOTE:-}
+      COURRIEL_SMTP_PORT: ${COURRIEL_SMTP_PORT:-587}
+      COURRIEL_SMTP_UTILISATEUR: ${COURRIEL_SMTP_UTILISATEUR:-}
+      COURRIEL_SMTP_MOT_DE_PASSE: ${COURRIEL_SMTP_MOT_DE_PASSE:-}
+      COURRIEL_GRAPH_TENANT: ${COURRIEL_GRAPH_TENANT:-}
+      COURRIEL_GRAPH_CLIENT_ID: ${COURRIEL_GRAPH_CLIENT_ID:-}
+      COURRIEL_GRAPH_SECRET: ${COURRIEL_GRAPH_SECRET:-}
+      COURRIEL_GRAPH_BASE: ${COURRIEL_GRAPH_BASE:-https://graph.microsoft.com/v1.0}
+      COURRIEL_GRAPH_JETON_BASE: ${COURRIEL_GRAPH_JETON_BASE:-https://login.microsoftonline.com}
       TZ: ${TZ:-Africa/Kinshasa}
     expose:
       - "3001"

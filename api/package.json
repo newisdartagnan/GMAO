@@ -21,7 +21,8 @@
     "lire-classeur": "node lancer.mjs lire-classeur",
     "purger-externes": "node lancer.mjs purger-externes",
     "tester-courriel": "node lancer.mjs tester-courriel",
-    "verifier-notifications": "node lancer.mjs verifier-notifications"
+    "verifier-notifications": "node lancer.mjs verifier-notifications",
+    "verifier-compose": "node lancer.mjs verifier-configuration-compose"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.0",

@@ -43,6 +43,14 @@ COPY api/migrations ./api/migrations
 COPY api/lancer.mjs ./api/lancer.mjs
 COPY api/package.json ./api/package.json
 
+# Ces deux-là ne servent qu'à « verifier-configuration-compose », qui
+# compare les réglages que le code lit à ceux que Compose transmet. Les
+# embarquer plutôt que les lire sur la machine hôte fait porter le contrôle
+# sur l'image réellement servie — un dépôt mis à jour sans reconstruction
+# dirait le contraire de ce qui tourne.
+COPY docker-compose.yml ./docker-compose.yml
+COPY api/src/config.ts ./api/src/config.ts
+
 # Le serveur ne tourne pas en root : une faille applicative ne doit pas
 # donner les pleins pouvoirs sur le conteneur.
 RUN addgroup -S gmao && adduser -S gmao -G gmao && chown -R gmao:gmao /app

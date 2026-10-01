@@ -112,6 +112,18 @@ titre "5. Commandes d'administration"
 # La sortie est capturée avant d'être filtrée : sous « pipefail », un grep
 # qui trouve ne suffit pas à rendre le tube heureux si la commande en amont
 # sort en erreur — ce qui faisait annoncer une panne sur un conteneur sain.
+# Une variable lue par le code mais absente du service « api » ne se voit
+# nulle part : le .env est juste, le code est juste, et le conteneur applique
+# la valeur par défaut en silence. Le contrôle tourne DANS le conteneur, sur
+# le compose et le config.ts qu'il embarque réellement.
+passage="$(compose exec -T api node api/lancer.mjs verifier-configuration-compose 2>&1 || true)"
+if printf '%s' "$passage" | grep -q '✘'; then
+  orange "• Des réglages n'arrivent pas jusqu'à l'API :"
+  printf '%s\n' "$passage" | sed -n '/✘/,$p' | sed 's/^/     /'
+elif printf '%s' "$passage" | grep -q '✔'; then
+  vert "✔ Tout réglage lu par l'API lui est transmis"
+fi
+
 inventaire="$(compose exec -T api node api/lancer.mjs --liste 2>&1 || true)"
 
 if printf '%s' "$inventaire" | grep -q '^ok '; then
