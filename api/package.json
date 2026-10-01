@@ -19,7 +19,9 @@
     "build:cli": "esbuild src/cli/*.ts --bundle --platform=node --format=esm --target=node22 --packages=external --alias:@gmao/partage=../shared/src/index.ts --outdir=dist/cli",
     "etat-connecteur": "node lancer.mjs etat-connecteur",
     "lire-classeur": "node lancer.mjs lire-classeur",
-    "purger-externes": "node lancer.mjs purger-externes"
+    "purger-externes": "node lancer.mjs purger-externes",
+    "tester-courriel": "node lancer.mjs tester-courriel",
+    "verifier-notifications": "node lancer.mjs verifier-notifications"
   },
   "dependencies": {
     "@fastify/compress": "^9.2.0",
@@ -28,12 +30,14 @@
     "@gmao/partage": "*",
     "bcryptjs": "^2.4.3",
     "fastify": "^5.2.0",
+    "nodemailer": "^10.0.13",
     "pg": "^8.13.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.11.10",
     "esbuild": "^0.24.2",
     "pino-pretty": "^13.1.3",

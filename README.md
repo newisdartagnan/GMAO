@@ -1082,6 +1082,111 @@ npm run verifier-formulaires --workspace=api
 
 ---
 
+## Prévenir le technicien par courriel
+
+Quand un ordre de travail est affecté à quelqu'un, cette personne reçoit un
+courriel. Sans cela, un OT affecté le matin peut attendre l'après-midi que
+son destinataire pense à ouvrir l'écran.
+
+```
+OT-2026-00648 — Moniteur multiparamétrique ne s'allume plus (P2 — Urgente)
+
+Bonjour CTI,
+
+L'ordre de travail OT-2026-00648 vous a été affecté.
+
+Moniteur multiparamétrique ne s'allume plus
+
+Priorité          P2 — Urgente — Activité de soins dégradée
+À terminer avant  17/09/2026 09:07
+Équipement        MON-0129 — Moniteur multiparamétrique
+Lieu              Salle d'opération 2
+Service           Bloc opératoire
+
+Ouvrir dans la GMAO : https://gmao.monkole.cd/ordres-travail/ord_00648
+```
+
+La notification se déclenche sur **tout** changement de technicien
+principal, quel que soit le chemin : l'écran d'affectation, la
+transformation d'une demande en OT déjà affecté, une planification en lot.
+Elle ne se déclenche pas deux fois pour la même affectation, ni quand on
+retire l'affectation, ni sur une autre modification de l'OT.
+
+Un courriel qui ne part pas ne fait jamais échouer l'affectation : le
+technicien verra son ordre de travail à l'écran de toute façon. L'échec est
+journalisé, avec sa raison.
+
+### Trois transports
+
+```
+COURRIEL_TRANSPORT=journal   # défaut : rien ne part, tout est tracé
+COURRIEL_TRANSPORT=graph     # Microsoft 365, mode application
+COURRIEL_TRANSPORT=smtp      # un relais classique
+```
+
+**`journal` est le défaut.** Une application qui se met à écrire à des gens
+sans qu'on l'ait demandé est une mauvaise surprise. Dans ce mode, le message
+est écrit dans les traces de l'API : on peut juger le contenu avant d'avoir
+un compte d'envoi.
+
+**`graph` est la voie durable** pour un établissement sur Microsoft 365. Le
+mode application n'a pas d'utilisateur derrière : aucun jeton à renouveler,
+rien à refaire quand quelqu'un change de poste. Dans Entra ID, sur
+l'inscription d'application :
+
+1. API autorisées → Microsoft Graph → permissions d'**application** (pas
+   déléguées) → `Mail.Send`
+2. « Accorder un consentement administrateur »
+3. Certificats et secrets → nouveau secret client
+
+> `Mail.Send` en application autorise l'envoi depuis **n'importe quelle**
+> boîte du locataire. Pour la restreindre à la seule boîte de la GMAO, voir
+> `ApplicationAccessPolicy` côté Exchange Online.
+
+**`smtp` marche avec à peu près tout.** Sur Exchange Online en revanche,
+l'authentification de base pour SMTP est désactivée par défaut à partir de
+fin 2026 : utilisable aujourd'hui, à ne pas bâtir dessus.
+
+### Éprouver sans toucher à un ordre de travail réel
+
+```bash
+docker compose exec api npm run tester-courriel --workspace=api -- vous@exemple.cd
+```
+
+Affiche le transport, ce qui manque le cas échéant, le message exactement
+tel qu'il partira, puis l'envoie. En mode `journal`, le message s'affiche
+quand même et rien ne part.
+
+### Un technicien d'essai
+
+```bash
+psql -d gmao -f scripts/technicien-essai.sql
+```
+
+Crée « CTI Test », un compte technicien portant une adresse réelle —
+changez-la dans le fichier avant d'exécuter. Affectez-lui un ordre de
+travail depuis l'application : vous recevrez ce que recevra un vrai
+technicien. Le script ne commet rien tant que `COMMIT` reste commenté.
+
+À désactiver une fois l'essai fait, sans quoi il reste proposé dans la liste
+des techniciens :
+
+```sql
+UPDATE utilisateurs SET actif = false WHERE id = 'usr_cti_test';
+```
+
+### Vérifier les règles
+
+```bash
+npm run verifier-notifications --workspace=api
+```
+
+Vingt cas, sans base ni réseau : quand prévenir, quand se taire, et ce que
+le message contient — y compris l'échappement du HTML, les descriptions
+venant d'un formulaire libre.
+
+---
+
 ## Sauvegarde et restauration
 
 ```bash

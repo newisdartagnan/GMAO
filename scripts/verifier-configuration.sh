@@ -188,6 +188,51 @@ case "${source_formulaire:-aucune}" in
 esac
 
 echo
+echo "Notification du technicien par courriel"
+echo "---------------------------------------"
+transport="$(lire COURRIEL_TRANSPORT)"
+case "${transport:-journal}" in
+  journal)
+    orange "• COURRIEL_TRANSPORT vaut « journal » — aucun courriel ne part."
+    orange "  Les messages sont écrits dans les traces de l'API. Pour les voir :"
+    orange "    docker compose exec api npm run tester-courriel --workspace=api -- vous@exemple.cd"
+    avertissements=$((avertissements + 1))
+    ;;
+  smtp)
+    exiger COURRIEL_EXPEDITEUR "adresse d'envoi" 5
+    exiger COURRIEL_SMTP_HOTE  "serveur de relais" 3
+    if [ -n "$(lire COURRIEL_SMTP_UTILISATEUR)" ] && [ -z "$(lire COURRIEL_SMTP_MOT_DE_PASSE)" ]; then
+      orange "• COURRIEL_SMTP_UTILISATEUR est renseigné sans mot de passe."
+      avertissements=$((avertissements + 1))
+    fi
+    # Exchange Online désactive l'authentification de base pour SMTP par
+    # défaut à partir de fin 2026. Cela marche encore, mais ce n'est pas
+    # une base sur laquelle installer un hôpital pour dix ans.
+    case "$(lire COURRIEL_SMTP_HOTE)" in
+      *office365*|*outlook*)
+        orange "• Relais Microsoft 365 en SMTP : l'authentification de base y est"
+        orange "  désactivée par défaut à partir de fin 2026. COURRIEL_TRANSPORT=graph"
+        orange "  ne dépend pas de cette échéance."
+        avertissements=$((avertissements + 1))
+        ;;
+    esac
+    ;;
+  graph)
+    exiger COURRIEL_EXPEDITEUR      "boîte réelle du locataire, qui envoie" 5
+    exiger COURRIEL_GRAPH_TENANT    "identifiant du locataire Microsoft 365" 4
+    exiger COURRIEL_GRAPH_CLIENT_ID "inscription d'application" 10
+    exiger COURRIEL_GRAPH_SECRET    "secret de l'inscription" 10
+    orange "• La permission d'APPLICATION « Mail.Send » doit être accordée à"
+    orange "  l'inscription, puis validée par un administrateur du locataire."
+    ;;
+  *)
+    rouge "✘ COURRIEL_TRANSPORT vaut « $transport » — attendu : journal, smtp ou graph."
+    compter
+    ;;
+esac
+conseiller COURRIEL_BASE_URL "adresse publique de la GMAO, pour le lien dans le courriel"
+
+echo
 if [ "$bloquants" -gt 0 ]; then
   rouge "$bloquants réglage(s) indispensable(s) manquant(s) : « docker compose up » échouera."
   exit 1

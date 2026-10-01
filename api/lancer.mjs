@@ -33,11 +33,13 @@ const COMMANDES = [
   'seed',
   'verifier-mapping',
   'verifier-formulaires',
+  'verifier-notifications',
   'lier-microsoft',
   'trouver-classeur',
   'etat-connecteur',
   'lire-classeur',
   'purger-externes',
+  'tester-courriel',
 ];
 
 /**
