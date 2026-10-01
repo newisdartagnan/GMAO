@@ -34,6 +34,7 @@ const COMMANDES = [
   'verifier-mapping',
   'verifier-formulaires',
   'verifier-notifications',
+  'verifier-configuration-compose',
   'lier-microsoft',
   'trouver-classeur',
   'etat-connecteur',
