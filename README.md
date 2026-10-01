@@ -1314,6 +1314,59 @@ d'envoyer, et nomme ce qui coince :
 | `465 est chiffré d'emblée, le 587…` | les deux ports sont intervertis |
 | `l'adresse d'envoi « … » est refusée` | expéditeur ≠ compte authentifié |
 
+### Partir n'est pas arriver
+
+Un courriel accepté par le relais n'est pas un courriel lu. Les grandes
+messageries — Gmail en tête, et la plupart des techniciens y sont — écartent
+ce qui n'est pas authentifié : le message atterrit dans les indésirables,
+personne ne s'en plaint, et l'on croit le dispositif en marche pendant des
+semaines. C'est la panne la plus coûteuse, parce qu'elle ne produit aucune
+erreur.
+
+`tester-courriel` lit le DNS du domaine d'envoi et dit ce qui manque :
+
+```
+  ✔ SPF            v=spf1 +a include:zohomail.com ip4:… ~all +mx ~all
+  ✔ DMARC          v=DMARC1; p=none; aspf=r; adkim=r;
+  · DKIM           non vérifiable ici : sa recherche exige le sélecteur de l'hébergeur
+
+  ! SPF : « +mx ~all » suit un « ~all » et ne sera jamais évalué — l'examen
+    s'arrête au premier « all ». À retirer, ou à déplacer avant lui.
+```
+
+Trois enregistrements comptent :
+
+| | À quoi ça sert | Qui le fournit |
+|---|---|---|
+| **SPF** | dit quels serveurs ont le droit d'écrire au nom du domaine | votre hébergeur donne la ligne `include:` |
+| **DKIM** | signe chaque message ; une signature valide vaut preuve d'origine | à activer chez l'hébergeur, qui donne le sélecteur |
+| **DMARC** | dit quoi faire d'un message non authentifié, et à qui envoyer les rapports | vous, dans le DNS |
+
+**Un SPF ne s'évalue que jusqu'à son premier `all`.** Ce mécanisme
+correspond toujours ; tout ce qui le suit est du texte mort, et donne
+l'illusion d'autoriser des expéditeurs qui ne le sont pas. Le contrôle le
+signale.
+
+**Un DMARC sans `rua=`** ne vous apprend rien : aucune adresse ne reçoit les
+rapports, donc rien ne vous préviendra le jour où vos notifications se
+mettent à être rejetées.
+
+Le seul contrôle qui tranche reste pratique : envoyez à une vraie adresse
+Gmail, puis dans le message reçu, **Afficher l'original** — SPF, DKIM et
+DMARC doivent y être à `PASS`. Et regardez le dossier des indésirables avant
+de conclure.
+
+### Des adresses personnelles comme destinataires
+
+Rien ne l'empêche, et beaucoup d'établissements n'ont pas le choix : le champ
+`email` d'un utilisateur accepte n'importe quelle adresse. Deux conséquences
+à connaître, qui ne sont pas techniques :
+
+- l'ordre de travail — équipement, local, service, description — quitte les
+  comptes de l'établissement pour une boîte personnelle ;
+- une personne qui s'en va continue de les recevoir tant que son compte n'est
+  pas désactivé dans **Paramètres → Comptes**.
+
 ### Éprouver sans toucher à un ordre de travail réel
 
 ```bash

@@ -10,6 +10,7 @@ import {
   envoyer,
   hebergeurDeCourrier,
   manquePourEnvoyer,
+  verifierAuthentification,
   verifierExpediteur,
   verifierSmtp,
 } from '../courriel/envoi.ts';
@@ -69,6 +70,19 @@ if (!courrielActif()) {
 } else if (config.courriel.transport === 'smtp') {
   const v = await verifierSmtp();
   console.log(`\n  ${v.ok ? '✔' : '✘'} Relais         ${v.detail}`);
+}
+
+// Partir n'est pas arriver. Les grandes messageries écartent ce qui n'est pas
+// authentifié, sans rien dire à l'expéditeur : le message tombe dans les
+// indésirables et l'on croit le dispositif en marche.
+if (courrielActif()) {
+  const a = await verifierAuthentification(config.courriel.expediteur);
+  console.log(`  ${a.spf ? '✔' : '✘'} SPF            ${a.spf ?? 'absent'}`);
+  console.log(`  ${a.dmarc ? '✔' : '✘'} DMARC          ${a.dmarc ?? 'absent'}`);
+  console.log('  · DKIM           non vérifiable ici : sa recherche exige le sélecteur de l’hébergeur');
+  for (const remarque of a.remarques) {
+    console.log(`\n  ! ${remarque.replace(/\n/g, '\n    ')}`);
+  }
 }
 
 // Un ordre de travail réel si la base en a un, sinon celui de la
