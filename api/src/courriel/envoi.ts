@@ -234,6 +234,87 @@ export async function hebergeurDeCourrier(adresse: string): Promise<{
   }
 }
 
+/**
+ * Ce qui cloche dans un enregistrement SPF.
+ *
+ * L'évaluation s'arrête au PREMIER « all » : ce mécanisme correspond
+ * toujours. Tout ce qui le suit est du texte mort — et donne l'illusion
+ * d'autoriser des expéditeurs qui ne le sont pas, ce qui se découvre le jour
+ * où leurs messages sont rejetés.
+ */
+export function remarquesSpf(spf: string): string[] {
+  const mecanismes = spf.trim().split(/\s+/);
+  const premierAll = mecanismes.findIndex((m) => /^[-~+?]?all$/i.test(m));
+  if (premierAll < 0 || premierAll === mecanismes.length - 1) return [];
+  return [
+    `SPF : « ${mecanismes.slice(premierAll + 1).join(' ')} » suit un « ${mecanismes[premierAll]} » ` +
+      'et ne sera jamais évalué — l’examen s’arrête au premier « all ». À retirer, ou à ' +
+      'déplacer avant lui.',
+  ];
+}
+
+/** Ce que le DNS du domaine promet aux messageries qui reçoivent. */
+export interface Authentification {
+  spf?: string;
+  dmarc?: string;
+  remarques: string[];
+}
+
+/**
+ * Le domaine est-il en règle pour que ses courriels soient acceptés ?
+ *
+ * Une notification qui part n'est pas une notification qui arrive. Les
+ * grandes messageries — Gmail en tête, et la plupart des techniciens y sont —
+ * écartent ce qui n'est pas authentifié : le message atterrit dans les
+ * indésirables, personne ne s'en plaint, et l'on croit le dispositif en
+ * marche pendant des semaines. C'est la panne la plus coûteuse du lot, parce
+ * qu'elle ne produit aucune erreur.
+ *
+ * SPF et DMARC se lisent dans le DNS public, sans identifiants. DKIM non :
+ * sa recherche exige de connaître le sélecteur, que seul l'hébergeur sait.
+ */
+export async function verifierAuthentification(adresse: string): Promise<Authentification> {
+  const domaine = adresse.split('@')[1];
+  const sortie: Authentification = { remarques: [] };
+  if (!domaine) return sortie;
+
+  const r = new Resolver();
+  const txt = async (nom: string): Promise<string[]> => {
+    try {
+      return (await r.resolveTxt(nom)).map((parties) => parties.join(''));
+    } catch {
+      return [];
+    }
+  };
+
+  sortie.spf = (await txt(domaine)).find((t) => t.toLowerCase().startsWith('v=spf1'));
+  sortie.dmarc = (await txt(`_dmarc.${domaine}`)).find((t) => t.toLowerCase().startsWith('v=dmarc1'));
+
+  if (!sortie.spf) {
+    sortie.remarques.push(
+      'aucun SPF : les messageries destinataires n’ont aucun moyen de savoir que ce relais ' +
+        'a le droit d’écrire au nom du domaine. Les indésirables sont la suite probable.',
+    );
+  } else {
+    sortie.remarques.push(...remarquesSpf(sortie.spf));
+  }
+
+  if (!sortie.dmarc) {
+    sortie.remarques.push(
+      'aucun DMARC : rien ne dit aux messageries quoi faire d’un message non authentifié, ' +
+        'et vous n’avez aucun retour sur ce qui est rejeté. « v=DMARC1; p=none; rua=mailto:… » ' +
+        'suffit pour commencer à voir.',
+    );
+  } else if (!/rua=/i.test(sortie.dmarc)) {
+    sortie.remarques.push(
+      'DMARC sans « rua= » : aucune adresse ne reçoit les rapports, donc rien ne vous ' +
+        'préviendra si vos notifications se mettent à être rejetées.',
+    );
+  }
+
+  return sortie;
+}
+
 /** Ce que l'annuaire sait de l'expéditeur, quand il veut bien le dire. */
 export interface Expediteur {
   etat: 'trouve' | 'absent' | 'inconnu';

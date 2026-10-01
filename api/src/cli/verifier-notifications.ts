@@ -1,7 +1,13 @@
 import { affecterOT, construireBaseDemo } from '@gmao/partage';
 import type { BaseGMAO } from '@gmao/partage';
 import { affectationsNouvelles, messageAffectation } from '../courriel/affectation.ts';
-import { hebergeurDeCourrier, messageGraph, messageJeton, messageSmtp } from '../courriel/envoi.ts';
+import {
+  hebergeurDeCourrier,
+  messageGraph,
+  messageJeton,
+  messageSmtp,
+  remarquesSpf,
+} from '../courriel/envoi.ts';
 
 /**
  * Contrôle des notifications d'affectation.
@@ -236,6 +242,31 @@ console.log('\nOù vit la messagerie du domaine');
   // Le test ne dépend pas d'un domaine tiers précis : il vérifie la forme de
   // la réponse, pas chez qui tel établissement héberge son courrier.
   verifier('la réponse a toujours la bonne forme', Array.isArray(microsoft.mx), true);
+}
+
+/* ================================================================== */
+console.log('\nCe que le SPF promet vraiment');
+
+{
+  // Une notification qui part n'est pas une notification qui arrive. Les
+  // grandes messageries écartent ce qui n'est pas authentifié, sans rien
+  // dire à l'expéditeur : le message tombe dans les indésirables et l'on
+  // croit le dispositif en marche pendant des semaines.
+  verifier('un SPF ordinaire ne dit rien', remarquesSpf('v=spf1 include:zohomail.com ~all'), []);
+  verifier('« all » en dernier : rien à signaler', remarquesSpf('v=spf1 +a -all'), []);
+
+  // Le cas réel : deux « all », et tout ce qui suit le premier est mort.
+  const double = remarquesSpf('v=spf1 +a include:zohomail.com ip4:35.214.170.240 ~all +mx ~all');
+  verifier('deux « all » : la partie morte est nommée', /« \+mx ~all »/.test(double[0] ?? ''), true);
+  verifier('et la raison est donnée', /s’arrête au premier/.test(double[0] ?? ''), true);
+
+  verifier(
+    'un « all » au milieu condamne la suite',
+    remarquesSpf('v=spf1 -all include:zohomail.com').length,
+    1,
+  );
+  verifier('sans « all », rien à dire', remarquesSpf('v=spf1 include:zohomail.com'), []);
+  verifier('les espaces multiples ne trompent pas', remarquesSpf('v=spf1   ~all   +mx').length, 1);
 }
 
 console.log(echecs === 0 ? '\nTous les cas passent.\n' : `\n${echecs} cas en échec.\n`);
