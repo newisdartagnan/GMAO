@@ -5,7 +5,7 @@ import { migrer } from '../db/migrations.ts';
 import { pool } from '../db/pool.ts';
 import { chargerBase } from '../db/charger.ts';
 import { messageAffectation } from '../courriel/affectation.ts';
-import { courrielActif, envoyer, manquePourEnvoyer } from '../courriel/envoi.ts';
+import { courrielActif, envoyer, manquePourEnvoyer, verifierExpediteur } from '../courriel/envoi.ts';
 
 /**
  * Éprouve la notification, sans toucher à un ordre de travail réel.
@@ -41,6 +41,12 @@ console.log(`  Lien GMAO     ${config.courriel.baseUrl || '(aucun — le courrie
 if (!courrielActif()) {
   console.log('\n  Rien ne sera envoyé :');
   for (const m of manquePourEnvoyer()) console.log(`    · ${m}`);
+} else if (config.courriel.transport === 'graph') {
+  // Demandé AVANT l'envoi : un « 404 » au moment d'envoyer ne dit pas si
+  // l'adresse désigne un objet inexistant ou un objet sans boîte.
+  const e = await verifierExpediteur();
+  const marque = e.etat === 'trouve' ? '✔' : e.etat === 'absent' ? '✘' : '·';
+  console.log(`\n  ${marque} Boîte d’envoi  ${e.detail}`);
 }
 
 // Un ordre de travail réel si la base en a un, sinon celui de la

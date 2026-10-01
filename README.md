@@ -1226,7 +1226,39 @@ un code :
 | `le locataire « … » est introuvable` | reprendre l'ID d'annuaire (locataire) |
 | `l'application « … » n'existe pas dans ce locataire` | reprendre l'ID d'application (client), pas l'ID d'objet |
 | `accès refusé. La permission d'APPLICATION « Mail.Send »…` | le consentement administrateur n'a pas été accordé |
-| `la boîte « … » n'existe pas ou n'a pas de licence` | créer la boîte partagée, ou corriger l'adresse |
+| `Graph ne trouve aucune boîte à « … »` | alias au lieu de l'adresse principale, groupe au lieu d'une boîte, ou adresse inexacte |
+| `« … » existe, mais sa boîte n'est pas exploitable` | boîte restée sur un Exchange local, boîte inactive, ou objet sans boîte |
+
+Quand le transport est `graph`, `tester-courriel` interroge l'annuaire sur
+l'adresse d'envoi **avant** de tenter l'envoi, et affiche ce qu'il trouve :
+
+```
+  ✔ Boîte d’envoi  Services généraux — sg@monkole.cd — ATTENTION : adresse
+                   principale différente, mettez celle-ci dans COURRIEL_EXPEDITEUR
+```
+
+C'est le piège le plus coûteux : **Graph n'accepte pas un alias**. Une boîte
+joignable depuis Outlook sous plusieurs adresses n'est atteignable ici que
+par son adresse principale, ou par son nom d'utilisateur principal.
+
+Cette consultation demande `User.Read.All`, que l'envoi n'exige pas. Ne pas
+l'avoir accordée n'est pas une anomalie : la commande le dit et passe à
+l'envoi.
+
+### Quelle boîte prendre comme expéditeur
+
+| Type d'objet | Convient ? |
+|---|---|
+| Boîte partagée | **oui** — et sans licence à consommer |
+| Boîte d'un utilisateur licencié | oui |
+| Alias d'une boîte | non — utiliser l'adresse principale |
+| Groupe Microsoft 365, liste de distribution | non — un groupe n'envoie pas |
+| Boîte restée sur un Exchange local | non — Graph ne l'atteint pas |
+
+Dans le centre d'administration Microsoft 365, une boîte partagée se crée en
+une minute : **Équipes et groupes → Boîtes aux lettres partagées**. Vérifiez
+ensuite son adresse **principale** dans sa fiche, c'est elle qui va dans
+`COURRIEL_EXPEDITEUR`.
 
 Un commentaire en fin de ligne est permis dans `.env`, à condition de laisser
 une espace avant le `#` : `COURRIEL_TRANSPORT=graph #journal` vaut bien
